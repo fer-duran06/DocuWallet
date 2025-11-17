@@ -1,2 +1,8 @@
-package com.example.myapplicationdocuwallet.domain.model
+package com.docuwallet.app.domain.model
 
+enum class AlertLevel {
+    SAFE,
+    WARNING,
+    URGENT,
+    EXPIRED
+}
