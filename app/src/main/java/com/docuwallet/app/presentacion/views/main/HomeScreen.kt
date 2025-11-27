@@ -1,30 +1,34 @@
 package com.docuwallet.app.presentacion.views.main
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
-import com.docuwallet.app.presentacion.navigation.Routes
 import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onNavigateToNewDocument: () -> Unit,  // Ya no lo usaremos aquí
+    onNavigateToNewDocument: () -> Unit,
     viewModel: AuthViewModel,
-    navController: NavHostController
+    onLogout: () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("DocuWallet") }
+                title = { Text("DocuWallet") },
+                actions = {
+                    IconButton(onClick = onLogout) {
+                        Icon(Icons.Default.Logout, "Cerrar Sesión")
+                    }
+                }
             )
         }
-        // ← ELIMINAR floatingActionButton de aquí
     ) { padding ->
         Column(
             modifier = Modifier
@@ -57,7 +61,7 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Estadísticas temporales
+            // Estadísticas
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -80,7 +84,7 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // TODO: Aquí irán las alertas de documentos próximos a vencer
+            // Alertas Recientes
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -104,14 +108,6 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 }
-            }
-            Button(
-                onClick = {
-                    viewModel.logout()
-                    navController.navigate(Routes.LOGIN)
-                }
-            ) {
-                Text("Cerrar Sesión")
             }
         }
     }

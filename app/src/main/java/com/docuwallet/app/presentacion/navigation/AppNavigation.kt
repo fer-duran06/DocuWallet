@@ -12,8 +12,7 @@ import com.docuwallet.app.presentacion.views.SplashScreen
 import com.docuwallet.app.presentacion.views.auth.LoginScreen
 import com.docuwallet.app.presentacion.views.auth.RegisterScreen
 import com.docuwallet.app.presentacion.views.main.CameraScanScreen
-import com.docuwallet.app.presentacion.views.main.DocumentsScreen
-import com.docuwallet.app.presentacion.views.main.HomeScreen
+import com.docuwallet.app.presentacion.views.main.MainScreen
 import com.docuwallet.app.presentacion.views.main.NewDocumentScreen
 import com.docuwallet.app.presentacion.views.main.PagePreviewScreen
 
@@ -25,11 +24,10 @@ fun AppNavigation(
     // Estado para las imágenes capturadas
     var capturedImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
-    // IMPORTANTE: Esto determina dónde inicia la app
     val startDestination = if (authViewModel.isUserLoggedIn()) {
         Routes.HOME
     } else {
-        Routes.SPLASH  // ← Debe empezar aquí si no hay sesión
+        Routes.SPLASH
     }
 
     NavHost(
@@ -69,23 +67,18 @@ fun AppNavigation(
             )
         }
 
-        // Home Screen (Dashboard)
+        // Main Screen (con Bottom Navigation)
         composable(Routes.HOME) {
-            HomeScreen(
-                onNavigateToNewDocument = {
-                    // Temporalmente navega a Documents
-                    navController.navigate(Routes.DOCUMENTS)
-                },
-                viewModel = authViewModel,
-                navController = navController
-            )
-        }
-
-        // Documents Screen (con botón +)
-        composable(Routes.DOCUMENTS) {
-            DocumentsScreen(
+            MainScreen(
+                authViewModel = authViewModel,
                 onNavigateToNewDocument = {
                     navController.navigate(Routes.NEW_DOCUMENT)
+                },
+                onLogout = {
+                    authViewModel.logout()
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
                 }
             )
         }
