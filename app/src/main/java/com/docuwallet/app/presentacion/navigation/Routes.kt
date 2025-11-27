@@ -4,13 +4,23 @@ object Routes {
     const val SPLASH = "splash"
     const val LOGIN = "login"
     const val REGISTER = "register"
+    const val SUCCESS = "success"
+
     const val HOME = "home"
-    const val PROFILE = "profile"
     const val DOCUMENTS = "documents"
     const val DOCUMENT_DETAIL = "document_detail/{documentId}"
-    const val ADD_DOCUMENT = "add_document"
+    const val NEW_DOCUMENT = "new_document"
     const val EDIT_DOCUMENT = "edit_document/{documentId}"
-    const val STATISTICS = "statistics"
+    const val STATS = "stats"
+    const val PROFILE = "profile"
+
+    // NUEVAS RUTAS
+    const val CAMERA_SCAN = "camera_scan"
+    const val PAGE_PREVIEW = "page_preview"
+
+    const val EDIT_PROFILE = "edit_profile"
+    const val CHANGE_PASSWORD = "change_password"
+    const val FILE_MANAGER = "file_manager"
     const val SETTINGS = "settings"
 
     fun documentDetail(documentId: String) = "document_detail/$documentId"

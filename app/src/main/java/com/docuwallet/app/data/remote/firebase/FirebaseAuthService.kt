@@ -50,7 +50,7 @@ class FirebaseAuthService {
     }
 
     fun isUserLoggedIn(): Boolean {
-        return auth.currentUser != null
+        return false  // ← Temporal: siempre mostrar Login para pruebas
     }
 
     suspend fun resetPassword(email: String): Result<Unit> {
