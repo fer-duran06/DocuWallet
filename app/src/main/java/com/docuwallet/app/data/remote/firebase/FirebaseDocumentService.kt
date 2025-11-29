@@ -1,171 +1,67 @@
 package com.docuwallet.app.data.remote.firebase
 
-import com.google.firebase.auth.FirebaseAuth
+import com.docuwallet.app.domain.model.DocumentModel
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import javax.inject.Inject
+import javax.inject.Singleton
 
-data class DocumentData(
-    val id: String = "",
-    val userId: String = "",
-    val name: String = "",
-    val category: String = "",
-    val expirationDate: String = "",
-    val fileUrl: String = "",
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis(),
-    val accessCount: Int = 0,
-    val isFavorite: Boolean = false,
-    val fileSizeBytes: Long = 0
-)
+@Singleton
+class FirebaseDocumentService @Inject constructor() {
 
-class FirebaseDocumentService {
-    private val db = FirebaseFirestore.getInstance()
-    private val auth = FirebaseAuth.getInstance()
-    private val documentsCollection = db.collection("documents")
+    private val firestore = FirebaseFirestore.getInstance()
+    private val documentsCollection = firestore.collection("documents")
 
-    suspend fun saveDocument(document: DocumentData): Result<String> {
-        return try {
-            val userId = auth.currentUser?.uid
-                ?: return Result.failure(Exception("Usuario no autenticado"))
-
-            val docData = document.copy(userId = userId)
-            val docRef = documentsCollection.add(docData).await()
-            Result.success(docRef.id)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    /**
+     * Guarda un documento en Firestore
+     */
+    suspend fun saveDocument(document: DocumentModel): String {
+        val docRef = documentsCollection.add(document).await()
+        return docRef.id
     }
 
-    suspend fun updateDocument(documentId: String, document: DocumentData): Result<Unit> {
-        return try {
-            val userId = auth.currentUser?.uid
-                ?: return Result.failure(Exception("Usuario no autenticado"))
-
-            val docData = document.copy(
-                userId = userId,
-                updatedAt = System.currentTimeMillis()
-            )
-            documentsCollection.document(documentId).set(docData).await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun deleteDocument(documentId: String): Result<Unit> {
-        return try {
-            documentsCollection.document(documentId).delete().await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getDocumentById(documentId: String): Result<DocumentData?> {
-        return try {
-            val snapshot = documentsCollection.document(documentId).get().await()
-            val document = snapshot.toObject(DocumentData::class.java)?.copy(id = snapshot.id)
-            Result.success(document)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    fun getAllDocuments(): Flow<List<DocumentData>> = callbackFlow {
-        val userId = auth.currentUser?.uid
-
-        if (userId == null) {
-            trySend(emptyList())
-            close()
-            return@callbackFlow
-        }
-
-        val listener = documentsCollection
+    /**
+     * Obtiene todos los documentos de un usuario
+     */
+    suspend fun getUserDocuments(userId: String): List<DocumentModel> {
+        val snapshot = documentsCollection
             .whereEqualTo("userId", userId)
             .orderBy("createdAt", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
+            .get()
+            .await()
 
-                val documents = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(DocumentData::class.java)?.copy(id = doc.id)
-                } ?: emptyList()
-
-                trySend(documents)
-            }
-
-        awaitClose { listener.remove() }
+        return snapshot.toObjects(DocumentModel::class.java)
     }
 
-    suspend fun searchDocuments(query: String): Result<List<DocumentData>> {
-        return try {
-            val userId = auth.currentUser?.uid
-                ?: return Result.failure(Exception("Usuario no autenticado"))
-
-            val snapshot = documentsCollection
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-
-            val documents = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(DocumentData::class.java)?.copy(id = doc.id)
-            }.filter { it.name.contains(query, ignoreCase = true) }
-
-            Result.success(documents)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    /**
+     * Obtiene un documento por ID
+     */
+    suspend fun getDocument(documentId: String): DocumentModel? {
+        val snapshot = documentsCollection.document(documentId).get().await()
+        return snapshot.toObject(DocumentModel::class.java)
     }
 
-    suspend fun getDocumentsByCategory(category: String): Result<List<DocumentData>> {
-        return try {
-            val userId = auth.currentUser?.uid
-                ?: return Result.failure(Exception("Usuario no autenticado"))
-
-            val snapshot = documentsCollection
-                .whereEqualTo("userId", userId)
-                .whereEqualTo("category", category)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
-
-            val documents = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(DocumentData::class.java)?.copy(id = doc.id)
-            }
-
-            Result.success(documents)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    /**
+     * Actualiza un documento
+     */
+    suspend fun updateDocument(documentId: String, updates: Map<String, Any>) {
+        documentsCollection.document(documentId).update(updates).await()
     }
 
-    suspend fun toggleFavorite(documentId: String, isFavorite: Boolean): Result<Unit> {
-        return try {
-            documentsCollection.document(documentId)
-                .update("isFavorite", isFavorite)
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    /**
+     * Elimina un documento
+     */
+    suspend fun deleteDocument(documentId: String) {
+        documentsCollection.document(documentId).delete().await()
     }
 
-    suspend fun incrementAccessCount(documentId: String): Result<Unit> {
-        return try {
-            val docRef = documentsCollection.document(documentId)
-            val snapshot = docRef.get().await()
-            val currentCount = snapshot.getLong("accessCount")?.toInt() ?: 0
-
-            docRef.update("accessCount", currentCount + 1).await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    /**
+     * Marca/desmarca documento como favorito
+     */
+    suspend fun toggleFavorite(documentId: String, isFavorite: Boolean) {
+        documentsCollection.document(documentId)
+            .update("isFavorite", isFavorite)
+            .await()
     }
 }
