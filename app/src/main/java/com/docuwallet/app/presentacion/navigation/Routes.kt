@@ -16,6 +16,7 @@ object Routes {
     const val EDIT_PROFILE = "edit_profile"
     const val CHANGE_PASSWORD = "change_password"
     const val SETTINGS = "settings"
+    const val FILE_MANAGER = "file_manager"  // ← NUEVA RUTA
 
     const val CAMERA_SCAN = "camera_scan"
     const val PAGE_PREVIEW = "page_preview"
