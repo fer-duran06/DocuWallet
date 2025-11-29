@@ -182,7 +182,7 @@ fun PagePreviewScreen(
         AlertDialog(
             onDismissRequest = {
                 showSuccessDialog = false
-                viewModel.resetState()
+                viewModel.resetPdfState()  // ✅ CORREGIDO
                 onGeneratePdf()
             },
             icon = {
@@ -216,7 +216,7 @@ fun PagePreviewScreen(
                 Button(
                     onClick = {
                         showSuccessDialog = false
-                        viewModel.resetState()
+                        viewModel.resetPdfState()  // ✅ CORREGIDO
                         onGeneratePdf()
                     }
                 ) {
@@ -229,7 +229,7 @@ fun PagePreviewScreen(
     // Diálogo de error
     if (pdfState.error != null) {
         AlertDialog(
-            onDismissRequest = { viewModel.resetState() },
+            onDismissRequest = { viewModel.resetPdfState() },  // ✅ CORREGIDO
             icon = {
                 Icon(
                     Icons.Default.Error,
@@ -241,7 +241,7 @@ fun PagePreviewScreen(
             title = { Text("Error al generar PDF") },
             text = { Text(pdfState.error ?: "Error desconocido") },
             confirmButton = {
-                Button(onClick = { viewModel.resetState() }) {
+                Button(onClick = { viewModel.resetPdfState() }) {  // ✅ CORREGIDO
                     Text("Aceptar")
                 }
             }
