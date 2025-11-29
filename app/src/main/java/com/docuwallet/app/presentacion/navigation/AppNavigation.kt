@@ -12,6 +12,7 @@ import com.docuwallet.app.presentacion.views.SplashScreen
 import com.docuwallet.app.presentacion.views.auth.LoginScreen
 import com.docuwallet.app.presentacion.views.auth.RegisterScreen
 import com.docuwallet.app.presentacion.views.main.CameraScanScreen
+import com.docuwallet.app.presentacion.views.main.FileManagerScreen
 import com.docuwallet.app.presentacion.views.main.MainScreen
 import com.docuwallet.app.presentacion.views.main.NewDocumentScreen
 import com.docuwallet.app.presentacion.views.main.PagePreviewScreen
@@ -74,11 +75,23 @@ fun AppNavigation(
                 onNavigateToNewDocument = {
                     navController.navigate(Routes.NEW_DOCUMENT)
                 },
+                onNavigateToFileManager = {  // ← NUEVA NAVEGACIÓN
+                    navController.navigate(Routes.FILE_MANAGER)
+                },
                 onLogout = {
                     authViewModel.logout()
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.HOME) { inclusive = true }
                     }
+                }
+            )
+        }
+
+        // File Manager Screen
+        composable(Routes.FILE_MANAGER) {
+            FileManagerScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

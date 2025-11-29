@@ -1,12 +1,15 @@
 package com.docuwallet.app.presentacion.views.main
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,7 +22,8 @@ import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
 @Composable
 fun ProfileScreen(
     viewModel: AuthViewModel,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onNavigateToFileManager: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -32,6 +36,7 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())  // ← AGREGAR SCROLL
         ) {
             // Header azul
             Box(
@@ -114,10 +119,25 @@ fun ProfileScreen(
                 modifier = Modifier.padding(16.dp)
             )
 
+            // Cambiar contraseña
             ProfileMenuItem("Cambiar contraseña", "Cambiar", Icons.Default.Lock)
+
+            // Notificaciones
             ProfileMenuItem("Notificaciones", "Activado", Icons.Default.Notifications)
-            ProfileMenuItem("Modo oscuro", "", Icons.Default.DarkMode)
-            ProfileMenuItem("Gestionar archivos", "Ver", Icons.Default.Folder)
+
+            // Modo oscuro con Switch
+            ProfileMenuItemWithSwitch(
+                label = "Modo oscuro",
+                icon = Icons.Default.DarkMode
+            )
+
+            // Gestionar archivos - CLICKEABLE
+            ProfileMenuItemClickable(
+                label = "Gestionar archivos",
+                action = "Ver",
+                icon = Icons.Default.Folder,
+                onClick = onNavigateToFileManager
+            )
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -216,6 +236,70 @@ fun ProfileMenuItem(
             text = action,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun ProfileMenuItemClickable(
+    label: String,
+    action: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null)
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+        Text(
+            text = action,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun ProfileMenuItemWithSwitch(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    var isChecked by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null)
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+        Switch(
+            checked = isChecked,
+            onCheckedChange = { isChecked = it }
         )
     }
 }
