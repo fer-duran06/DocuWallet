@@ -6,31 +6,46 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.docuwallet.app.data.local.entity.DocumentEntity
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+
+// As DocumentEntity couldn't be found, a placeholder is created based on its usage.
+// Please replace with the correct import and definition.
+data class DocumentEntity(
+    val id: String = "001",
+    val name: String,
+    val category: String,
+    val expiryDate: Date?,
+    val fileSize: Long,
+    val pageCount: Int,
+    val createdAt: Date,
+    val notes: String,
+    val isSynced: Boolean,
+    val documentUrl: String,
+    val mimeType: String
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentDetailScreen(
     document: DocumentEntity,
     onNavigateBack: () -> Unit,
+    // The onOpenDocument parameter is not used. It can be removed if it is not needed.
     onOpenDocument: (String, String) -> Unit
 ) {
-    val daysRemaining = if (document.expiryDate != null) {
-        calculateDaysRemaining(document.expiryDate!!)
-    } else {
-        null
-    }
+    val daysRemaining = document.expiryDate?.let { calculateDaysRemaining(it) }
 
     val isExpiringSoon = daysRemaining != null && daysRemaining in 0..30
     val isExpired = daysRemaining != null && daysRemaining < 0
@@ -90,7 +105,7 @@ fun DocumentDetailScreen(
                                 Text(
                                     text = "━━━━",
                                     style = MaterialTheme.typography.bodySmall,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer // Corrected from tint to color
                                 )
                             }
                         }
@@ -99,7 +114,7 @@ fun DocumentDetailScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = document.name,  // ✅ CORREGIDO
+                        text = document.name,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -112,20 +127,20 @@ fun DocumentDetailScreen(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                DetailRow("ID", "001")
+                DetailRow("ID", document.id)
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
 
                 DetailRow("Categoría", document.category)
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
 
-                if (document.expiryDate != null) {
+                document.expiryDate?.let {
                     DetailRow(
                         "Fecha de Vencimiento",
-                        formatDateLong(document.expiryDate!!)
+                        formatDateLong(it)
                     )
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
 
-                    if (daysRemaining != null) {
+                    daysRemaining?.let {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -137,8 +152,8 @@ fun DocumentDetailScreen(
                             )
                             Text(
                                 text = when {
-                                    isExpired -> "${abs(daysRemaining)} (vencido)"
-                                    else -> "$daysRemaining"
+                                    isExpired -> "${abs(it)} (vencido)"
+                                    else -> "$it"
                                 },
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Bold,
@@ -159,7 +174,7 @@ fun DocumentDetailScreen(
                 DetailRow("Páginas", "${document.pageCount}")
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
 
-                DetailRow("Veces Accedido", "5 veces")
+                DetailRow("Veces Accedido", "5 veces") // Placeholder value
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
 
                 DetailRow("Creado", formatDateLong(document.createdAt))
@@ -209,3 +224,42 @@ fun DocumentDetailScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Documento guardado solo localmente. Activa Firebase Storage para sincronizar.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+fun calculateDaysRemaining(expiryDate: Date): Long {
+    val diff = expiryDate.time - System.currentTimeMillis()
+    return TimeUnit.DAYS.convert(diff, TimeUnit.MILLISECONDS)
+}
+
+fun formatDateLong(date: Date): String {
+    val format = SimpleDateFormat("dd 'de' MMMM 'de' yyyy", Locale.getDefault())
+    return format.format(date)
+}

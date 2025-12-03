@@ -1,5 +1,8 @@
 package com.docuwallet.app.presentacion.navigation
 
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
 object Routes {
     const val SPLASH = "splash"
     const val LOGIN = "login"
@@ -25,4 +28,10 @@ object Routes {
 
     fun documentDetail(documentId: String) = "document_detail/$documentId"
     fun editDocument(documentId: String) = "edit_document/$documentId"
+
+    fun pdfViewer(pdfPath: String, documentName: String): String {
+        val encodedPath = URLEncoder.encode(pdfPath, StandardCharsets.UTF_8.toString())
+        val encodedName = URLEncoder.encode(documentName, StandardCharsets.UTF_8.toString())
+        return "pdf_viewer/$encodedPath/$encodedName"
+    }
 }
