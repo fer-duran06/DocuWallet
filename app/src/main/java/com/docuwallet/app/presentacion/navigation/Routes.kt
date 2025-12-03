@@ -20,6 +20,8 @@ object Routes {
 
     const val CAMERA_SCAN = "camera_scan"
     const val PAGE_PREVIEW = "page_preview"
+    const val PDF_VIEWER = "pdf_viewer/{pdfPath}/{documentName}"
+
 
     fun documentDetail(documentId: String) = "document_detail/$documentId"
     fun editDocument(documentId: String) = "edit_document/$documentId"
