@@ -1,28 +1,21 @@
 package com.docuwallet.app.presentacion.viewmodels
 
+import android.app.Application
 import android.content.Context
 import android.net.Uri
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.docuwallet.app.data.remote.firebase.FirebaseDocumentService
-import com.docuwallet.app.data.remote.firebase.FirebaseStorageService
-import com.docuwallet.app.domain.model.DocumentModel
+import com.docuwallet.app.data.repository.DocumentRepository
 import com.docuwallet.app.utils.PdfUtils
-import com.google.firebase.Timestamp
-import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
-// ❌ ELIMINAR ESTAS LÍNEAS (18-29) - Ya están en DocumentUploadStates.kt
+class DocumentUploadViewModel(application: Application) : AndroidViewModel(application) {
 
-class DocumentUploadViewModel : ViewModel() {
-
-    private val auth = FirebaseAuth.getInstance()
-    private val storageService = FirebaseStorageService()
-    private val documentService = FirebaseDocumentService()
+    private val repository = DocumentRepository(application.applicationContext)
 
     private val _pdfState = MutableStateFlow(PdfGenerationState())
     val pdfState: StateFlow<PdfGenerationState> = _pdfState.asStateFlow()
@@ -67,6 +60,8 @@ class DocumentUploadViewModel : ViewModel() {
     }
 
     fun saveDocument(
+        context: Context,
+        imageUris: List<Uri>,
         name: String,
         category: String,
         notes: String,
@@ -76,40 +71,28 @@ class DocumentUploadViewModel : ViewModel() {
             try {
                 _saveState.value = DocumentSaveState(isLoading = true)
 
-                val userId = auth.currentUser?.uid
-                    ?: throw Exception("Usuario no autenticado")
-
-                val pdfFile = generatedPdfFile
-                    ?: throw Exception("No hay PDF generado")
-
-                // 1. Subir PDF a Firebase Storage
-                val pdfUrl = storageService.uploadPdf(
-                    userId = userId,
-                    file = pdfFile,
-                    fileName = pdfFile.name
-                )
-
-                // 2. Crear documento en Firestore
-                val document = DocumentModel(
-                    userId = userId,
+                // Guardar usando el Repository (Room + Firebase)
+                val result = repository.saveDocument(
+                    imageUris = imageUris,
                     name = name,
                     category = category,
                     notes = notes,
-                    pdfUrl = pdfUrl,
-                    pdfFileName = pdfFile.name,
-                    fileSize = pdfFile.length(),
-                    pageCount = pageCount,
-                    createdAt = Timestamp.now(),
-                    updatedAt = Timestamp.now()
+                    pageCount = pageCount
                 )
 
-                val documentId = documentService.saveDocument(document)
-
-                _saveState.value = DocumentSaveState(
-                    isLoading = false,
-                    isSuccess = true,
-                    documentId = documentId
-                )
+                if (result.isSuccess) {
+                    _saveState.value = DocumentSaveState(
+                        isLoading = false,
+                        isSuccess = true,
+                        documentId = result.getOrNull()
+                    )
+                } else {
+                    _saveState.value = DocumentSaveState(
+                        isLoading = false,
+                        isSuccess = false,
+                        error = result.exceptionOrNull()?.message ?: "Error al guardar documento"
+                    )
+                }
 
             } catch (e: Exception) {
                 _saveState.value = DocumentSaveState(
@@ -123,10 +106,10 @@ class DocumentUploadViewModel : ViewModel() {
 
     fun resetPdfState() {
         _pdfState.value = PdfGenerationState()
+        generatedPdfFile = null
     }
 
     fun resetSaveState() {
         _saveState.value = DocumentSaveState()
-        generatedPdfFile = null
     }
 }

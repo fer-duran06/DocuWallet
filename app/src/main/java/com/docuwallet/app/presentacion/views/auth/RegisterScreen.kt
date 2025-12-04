@@ -154,7 +154,7 @@ fun RegisterScreen(
                 passwordMismatch -> "Las contraseñas no coinciden"
                 else -> null
             },
-            onDone = {
+            onImeAction = {  // ✅ CAMBIADO: onDone → onImeAction
                 val validation = validateInputs(name, email, password, confirmPassword)
                 if (validation.isValid) {
                     viewModel.register(email.trim(), password, name.trim())

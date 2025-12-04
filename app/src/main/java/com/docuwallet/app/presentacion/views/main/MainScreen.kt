@@ -17,7 +17,8 @@ import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
 fun MainScreen(
     authViewModel: AuthViewModel,
     onNavigateToNewDocument: () -> Unit,
-    onNavigateToFileManager: () -> Unit,  // ← NUEVO PARÁMETRO
+    onNavigateToFileManager: () -> Unit,
+    onNavigateToDocumentDetail: (String) -> Unit,  // ← AGREGAR ESTE PARÁMETRO
     onLogout: () -> Unit
 ) {
     val navController = rememberNavController()
@@ -47,7 +48,8 @@ fun MainScreen(
 
             composable(Routes.DOCUMENTS) {
                 DocumentsScreen(
-                    onNavigateToNewDocument = onNavigateToNewDocument
+                    onNavigateToNewDocument = onNavigateToNewDocument,
+                    onNavigateToDocumentDetail = onNavigateToDocumentDetail  // ← PASAR EL CALLBACK
                 )
             }
 
@@ -59,7 +61,7 @@ fun MainScreen(
                 ProfileScreen(
                     viewModel = authViewModel,
                     onLogout = onLogout,
-                    onNavigateToFileManager = onNavigateToFileManager  // ← PASAR PARÁMETRO
+                    onNavigateToFileManager = onNavigateToFileManager
                 )
             }
         }
