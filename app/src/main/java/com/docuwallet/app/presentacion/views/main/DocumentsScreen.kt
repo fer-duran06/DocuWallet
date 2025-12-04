@@ -1,13 +1,10 @@
 package com.docuwallet.app.presentacion.views.main
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,257 +12,155 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
-data class Document(
-    val id: String,
-    val name: String,
-    val category: String,
-    val categoryIcon: ImageVector,
-    val categoryColor: Color,
-    val expiryDate: String,
-    val daysUntilExpiry: Int,
-    val isFavorite: Boolean = false
-)
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.docuwallet.app.data.local.entity.DocumentEntity
+import com.docuwallet.app.presentacion.viewmodels.DocumentsViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentsScreen(
-    onNavigateToNewDocument: () -> Unit
+    onNavigateToNewDocument: () -> Unit,
+    onNavigateToDocumentDetail: (String) -> Unit,
+    viewModel: DocumentsViewModel = viewModel()
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("Todos") }
+    val uiState by viewModel.uiState.collectAsState()
 
-    // Documentos de ejemplo (hardcoded temporalmente)
-    val allDocuments = remember {
-        listOf(
-            Document(
-                id = "1",
-                name = "INE",
-                category = "Identificación",
-                categoryIcon = Icons.Default.Badge,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "Vence: 15/06/2030",
-                daysUntilExpiry = 1500,
-                isFavorite = false
-            ),
-            Document(
-                id = "2",
-                name = "Pasaporte",
-                category = "Viajes",
-                categoryIcon = Icons.Default.Flight,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "Vence: 20/11/2025",
-                daysUntilExpiry = 45,
-                isFavorite = false
-            ),
-            Document(
-                id = "3",
-                name = "Licencia de Conducir",
-                category = "Identificación",
-                categoryIcon = Icons.Default.Badge,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "Vence: 15/08/2030",
-                daysUntilExpiry = 1400,
-                isFavorite = false
-            ),
-            Document(
-                id = "4",
-                name = "Cédula profesional",
-                category = "Educación",
-                categoryIcon = Icons.Default.School,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "Vence: 31/05/2026",
-                daysUntilExpiry = 95,
-                isFavorite = true
-            ),
-            Document(
-                id = "5",
-                name = "Seguro Médico",
-                category = "Salud",
-                categoryIcon = Icons.Default.LocalHospital,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "Vence: 02/11/26",
-                daysUntilExpiry = 15,
-                isFavorite = false
-            ),
-            Document(
-                id = "6",
-                name = "Trabajo móvil",
-                category = "Trabajo",
-                categoryIcon = Icons.Default.Work,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "sin vencimiento",
-                daysUntilExpiry = 9999,
-                isFavorite = false
-            ),
-            Document(
-                id = "7",
-                name = "Cartilla",
-                category = "Salud",
-                categoryIcon = Icons.Default.LocalHospital,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "sin vencimiento",
-                daysUntilExpiry = 9999,
-                isFavorite = true
-            ),
-            Document(
-                id = "8",
-                name = "Acta de Nacimiento",
-                category = "Personal",
-                categoryIcon = Icons.Default.Person,
-                categoryColor = Color(0xFF2196F3),
-                expiryDate = "sin vencimiento",
-                daysUntilExpiry = 9999,
-                isFavorite = false
-            )
-        )
-    }
-
-    // Filtrar documentos según búsqueda y categoría
-    val filteredDocuments = allDocuments.filter { doc ->
-        val matchesSearch = doc.name.contains(searchQuery, ignoreCase = true)
-        val matchesCategory = when (selectedCategory) {
-            "Todos" -> true
-            "Favoritos" -> doc.isFavorite
-            else -> doc.category == selectedCategory
-        }
-        matchesSearch && matchesCategory
-    }
+    val categories = listOf(
+        "Todos" to "📁",
+        "Favoritos" to "⭐",
+        "Identificación" to "🪪",
+        "Salud" to "🏥",
+        "Viajes" to "✈️",
+        "Educación" to "🎓",
+        "Trabajo" to "💼",
+        "Personal" to "📄"
+    )
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Mis Documentos") }
-            )
-        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onNavigateToNewDocument,
-                containerColor = Color(0xFFFF9800)
+                containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Nuevo Documento",
-                    tint = Color.White
-                )
+                Icon(Icons.Default.Add, "Agregar documento")
             }
         }
-    ) { padding ->
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .background(Color(0xFFF5F5F5))
+                .padding(paddingValues)
+                .padding(16.dp)
         ) {
-            // Barra de búsqueda
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar Documentos...") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(25.dp),
-                leadingIcon = {
-                    Icon(Icons.Default.Search, "Buscar")
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, "Limpiar")
-                        }
-                    }
-                },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
-                )
+            Text(
+                text = "Mis Documentos",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
             )
 
-            // Filtros por categoría (Carrusel/Slider horizontal)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Filtros de categorías
             LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val categories = listOf(
-                    "Todos",
-                    "Favoritos",
-                    "Identificación",
-                    "Salud",
-                    "Viajes",
-                    "Educación",
-                    "Trabajo",
-                    "Personal"
-                )
-
-                items(categories) { category ->
+                items(categories) { (category, emoji) ->
                     FilterChip(
-                        selected = selectedCategory == category,
-                        onClick = { selectedCategory = category },
-                        label = { Text(category) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF2196F3),
-                            selectedLabelColor = Color.White
-                        )
+                        selected = uiState.selectedCategory == category,
+                        onClick = { viewModel.loadDocuments(category) },
+                        label = { Text("$emoji $category") }
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Lista de documentos
-            if (filteredDocuments.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
+            // Contenido
+            when {
+                uiState.isLoading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "📂",
-                            style = MaterialTheme.typography.displayLarge
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = if (searchQuery.isEmpty() && selectedCategory == "Todos") {
-                                "No tienes documentos"
-                            } else {
-                                "No se encontraron resultados"
-                            },
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = if (searchQuery.isEmpty() && selectedCategory == "Todos") {
-                                "Toca el botón + para agregar uno"
-                            } else {
-                                "Intenta con otra búsqueda o categoría"
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
+                        CircularProgressIndicator()
                     }
                 }
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(filteredDocuments) { document ->
-                        DocumentCard(
-                            document = document,
-                            onClick = { /* TODO: Navegar a detalle */ }
-                        )
+
+                uiState.error != null -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.Error,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = uiState.error ?: "Error desconocido",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+
+                uiState.documents.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "No hay documentos",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Escanea tu primer documento para comenzar",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(uiState.documents) { document ->
+                            DocumentCard(
+                                document = document,
+                                onFavoriteClick = {
+                                    viewModel.toggleFavorite(document.id, document.isFavorite)
+                                },
+                                onDeleteClick = {
+                                    viewModel.deleteDocument(document.id)
+                                },
+                                onClick = {
+                                    onNavigateToDocumentDetail(document.id)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -275,108 +170,147 @@ fun DocumentsScreen(
 
 @Composable
 fun DocumentCard(
-    document: Document,
-    onClick: () -> Unit
+    document: DocumentEntity,
+    onFavoriteClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .clickable { onClick() }
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            // Icono de categoría
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        document.categoryColor.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    document.categoryIcon,
-                    contentDescription = null,
-                    tint = document.categoryColor,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Información del documento
-            Column(
-                modifier = Modifier.weight(1f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = document.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        Icons.Default.InsertDriveFile,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
                     )
-                    if (document.isFavorite) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            Icons.Default.Star,
-                            contentDescription = "Favorito",
-                            tint = Color(0xFFFFD700),
-                            modifier = Modifier.size(16.dp)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = document.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = document.category,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                 }
-                Text(
-                    text = document.expiryDate,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+
+                Row {
+                    IconButton(onClick = onFavoriteClick) {
+                        Icon(
+                            if (document.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Favorito",
+                            tint = if (document.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    IconButton(onClick = onDeleteClick) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Eliminar",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
 
-            // Indicador de vencimiento
-            ExpiryIndicator(daysUntilExpiry = document.daysUntilExpiry)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (document.notes.isNotBlank()) {
+                Text(
+                    text = document.notes,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "Tamaño",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = "${document.fileSize / 1024} KB",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = "Páginas",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = "${document.pageCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = "Creado",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = formatDate(document.createdAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                if (!document.isSynced) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.CloudOff,
+                            contentDescription = "No sincronizado",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = "Local",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
-@Composable
-fun ExpiryIndicator(daysUntilExpiry: Int) {
-    val (color, label) = when {
-        daysUntilExpiry > 365 -> Color(0xFF4CAF50) to ""  // Verde
-        daysUntilExpiry in 31..365 -> Color(0xFFFFC107) to "${daysUntilExpiry} días"  // Amarillo
-        daysUntilExpiry in 1..30 -> Color(0xFFF44336) to "${daysUntilExpiry} días"  // Rojo
-        else -> Color(0xFF4CAF50) to ""  // Sin vencimiento
-    }
-
-    if (label.isNotEmpty()) {
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = color.copy(alpha = 0.2f)
-        ) {
-            Text(
-                text = label,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = color,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    } else {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(color, shape = CircleShape)
-        )
-    }
+private fun formatDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
+    return sdf.format(Date(timestamp))
 }

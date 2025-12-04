@@ -1,24 +1,35 @@
 package com.docuwallet.app.presentacion.views.main
 
-import android.Manifest
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Notes
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
-import com.docuwallet.app.utils.PermissionUtils
+import com.docuwallet.app.presentacion.viewmodels.DocumentUploadViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
@@ -26,40 +37,43 @@ import com.google.accompanist.permissions.rememberMultiplePermissionsState
 @Composable
 fun NewDocumentScreen(
     onNavigateBack: () -> Unit,
-    onNavigateToCamera: () -> Unit
+    onNavigateToCamera: () -> Unit,
+    onNavigateToDocuments: () -> Unit,
+    capturedImages: List<Uri>,
+    viewModel: DocumentUploadViewModel
 ) {
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
-
     var documentName by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("PERSONAL") }
+    var selectedCategory by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    var showPermissionDialog by remember { mutableStateOf(false) }
+    var showImagesDialog by remember { mutableStateOf(false) }
 
-    // Permisos
-    val permissionsState = rememberMultiplePermissionsState(
-        permissions = PermissionUtils.ALL_PERMISSIONS.toList()
-    )
+    val saveState by viewModel.saveState.collectAsState()
+    val pdfState by viewModel.pdfState.collectAsState()
 
-    // Launcher para seleccionar imagen de galería
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            selectedImageUri = it
+    val hasPdfGenerated = pdfState.pdfFile != null || capturedImages.isNotEmpty()
+    val pageCount = capturedImages.size
+
+    LaunchedEffect(saveState.isSuccess) {
+        if (saveState.isSuccess) {
+            documentName = ""
+            selectedCategory = ""
+            notes = ""
+            selectedImageUri = null
+            onNavigateToDocuments()
         }
     }
 
-    // Categorías disponibles
-    val categories = listOf(
-        "IDENTIFICACION" to "🪪",
-        "SALUD" to "🏥",
-        "VIAJES" to "✈️",
-        "EDUCACION" to "🎓",
-        "TRABAJO" to "💼",
-        "PERSONAL" to "📄"
+    val cameraPermissions = rememberMultiplePermissionsState(
+        permissions = listOf(android.Manifest.permission.CAMERA)
     )
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        selectedImageUri = uri
+    }
 
     Scaffold(
         topBar = {
@@ -67,7 +81,7 @@ fun NewDocumentScreen(
                 title = { Text("Nuevo Documento") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, "Volver")
+                        Icon(Icons.Filled.ArrowBack, "Volver") // Cambiado a Filled
                     }
                 }
             )
@@ -77,129 +91,167 @@ fun NewDocumentScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
         ) {
-            // Sección: Método de captura
-            Text(
-                text = "Seleccionar origen",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Botón: Escanear con cámara
-                OutlinedCard(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(120.dp),
-                    onClick = {
-                        if (permissionsState.allPermissionsGranted) {
-                            onNavigateToCamera()
-                        } else {
-                            permissionsState.launchMultiplePermissionRequest()
-                        }
-                    }
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            Icons.Default.PhotoCamera,
-                            contentDescription = "Cámara",
-                            modifier = Modifier.size(40.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Escanear",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-
-                // Botón: Seleccionar de galería
-                OutlinedCard(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(120.dp),
-                    onClick = {
-                        if (permissionsState.allPermissionsGranted) {
-                            galleryLauncher.launch("image/*")
-                        } else {
-                            permissionsState.launchMultiplePermissionRequest()
-                        }
-                    }
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            Icons.Default.Image,
-                            contentDescription = "Galería",
-                            modifier = Modifier.size(40.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Galería",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-
-            // Vista previa de imagen seleccionada
-            selectedImageUri?.let { uri ->
+            if (capturedImages.isNotEmpty()) {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f)
+                    )
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        Image(
-                            painter = rememberAsyncImagePainter(uri),
-                            contentDescription = "Vista previa",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Filled.CheckCircle, // Cambiado a Filled
+                                    contentDescription = null,
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "${capturedImages.size} página(s) capturadas",
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF4CAF50)
+                                    )
+                                    if (pdfState.pdfFile != null) {
+                                        Text(
+                                            text = "PDF: ${pdfState.pdfFile?.length()?.div(1024)} KB",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                }
+                            }
 
-                        IconButton(
-                            onClick = { selectedImageUri = null },
+                            TextButton(onClick = { showImagesDialog = true }) {
+                                Text("Ver fotos")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(capturedImages) { imageUri ->
+                                Card(modifier = Modifier.size(80.dp)) {
+                                    Image(
+                                        painter = rememberAsyncImagePainter(imageUri),
+                                        contentDescription = "Página",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedButton(
+                            onClick = onNavigateToCamera,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.CameraAlt, null) // Cambiado a Filled
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Escanear nuevamente")
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            } else {
+                Text(
+                    text = "Seleccionar origen",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedCard(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(120.dp)
+                            .clickable {
+                                if (cameraPermissions.allPermissionsGranted) {
+                                    onNavigateToCamera()
+                                } else {
+                                    cameraPermissions.launchMultiplePermissionRequest()
+                                }
+                            }
+                    ) {
+                        Column(
                             modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Eliminar",
-                                tint = MaterialTheme.colorScheme.error
+                                Icons.Filled.CameraAlt, // Cambiado a Filled
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = MaterialTheme.colorScheme.primary
                             )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Escanear", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    OutlinedCard(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(120.dp)
+                            .clickable {
+                                galleryLauncher.launch("image/*")
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.Image, // Cambiado a Filled
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Galería", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
 
-            Divider()
-
-            // Nombre del documento
             Text(
                 text = "Información del documento",
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
+                fontWeight = FontWeight.Bold
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
                 value = documentName,
@@ -208,26 +260,51 @@ fun NewDocumentScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 leadingIcon = {
-                    Icon(Icons.Default.Description, "Nombre")
+                    Icon(Icons.Filled.Notes, "Nombre") // Cambiado a Filled
                 }
             )
 
-            // Categoría
+            Spacer(modifier = Modifier.height(16.dp))
+
             Text(
                 text = "Categoría",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
 
-            categories.forEach { (category, emoji) ->
-                FilterChip(
-                    selected = selectedCategory == category,
-                    onClick = { selectedCategory = category },
-                    label = { Text("$emoji $category") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val categories = listOf(
+                "Identificación" to "🪪",
+                "Salud" to "🏥",
+                "Viajes" to "✈️",
+                "Educación" to "🎓",
+                "Trabajo" to "💼",
+                "Personal" to "📄"
+            )
+
+            categories.chunked(2).forEach { rowCategories ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowCategories.forEach { (category, emoji) ->
+                        FilterChip(
+                            selected = selectedCategory == category,
+                            onClick = { selectedCategory = category },
+                            label = { Text("$emoji $category") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (rowCategories.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Notas
+            Spacer(modifier = Modifier.height(16.dp))
+
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
@@ -237,44 +314,101 @@ fun NewDocumentScreen(
                     .height(120.dp),
                 maxLines = 5,
                 leadingIcon = {
-                    Icon(Icons.Default.Notes, "Notas")
+                    Icon(Icons.Filled.Edit, "Notas") // Cambiado a Filled
                 }
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Botón guardar
             Button(
                 onClick = {
-                    // TODO: Implementar guardado
+                    if ((hasPdfGenerated || capturedImages.isNotEmpty()) && documentName.isNotBlank() && selectedCategory.isNotBlank()) {
+                        viewModel.saveDocument(
+                            context = context,
+                            imageUris = capturedImages,
+                            name = documentName,
+                            category = selectedCategory,
+                            notes = notes,
+                            pageCount = pageCount
+                        )
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = documentName.isNotEmpty() && selectedImageUri != null
+                enabled = (hasPdfGenerated || capturedImages.isNotEmpty()) && documentName.isNotBlank() && selectedCategory.isNotBlank() && !saveState.isLoading
             ) {
-                Icon(Icons.Default.Save, "Guardar")
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Guardar Documento")
+                if (saveState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Guardando...")
+                } else {
+                    Icon(Icons.Filled.Save, "Guardar") // Cambiado a Filled
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Guardar Documento")
+                }
+            }
+
+            if (!hasPdfGenerated && capturedImages.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "📷 Primero escanea o selecciona un documento",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
 
-    // Diálogo de permisos
-    if (showPermissionDialog) {
+    if (showImagesDialog) {
         AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = { Text("Permisos necesarios") },
-            text = { Text("Esta función requiere permisos de cámara y almacenamiento.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    permissionsState.launchMultiplePermissionRequest()
-                    showPermissionDialog = false
-                }) {
-                    Text("Otorgar permisos")
+            onDismissRequest = { showImagesDialog = false },
+            title = { Text("Páginas capturadas (${capturedImages.size})") },
+            text = {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(capturedImages) { imageUri ->
+                        Card {
+                            Image(
+                                painter = rememberAsyncImagePainter(imageUri),
+                                contentDescription = "Página",
+                                modifier = Modifier
+                                    .width(200.dp)
+                                    .height(300.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showPermissionDialog = false }) {
-                    Text("Cancelar")
+            confirmButton = {
+                Button(onClick = { showImagesDialog = false }) {
+                    Text("Cerrar")
+                }
+            }
+        )
+    }
+
+    if (saveState.error != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.resetSaveState() },
+            icon = {
+                Icon(
+                    Icons.Filled.Error, // Cambiado a Filled
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = { Text("Error al guardar") },
+            text = { Text(saveState.error ?: "Error desconocido") },
+            confirmButton = {
+                Button(onClick = { viewModel.resetSaveState() }) {
+                    Text("Aceptar")
                 }
             }
         )

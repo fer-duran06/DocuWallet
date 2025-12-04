@@ -1,7 +1,10 @@
 package com.docuwallet.app.presentacion.components
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -13,10 +16,10 @@ sealed class BottomNavItem(
     val icon: ImageVector,
     val label: String
 ) {
-    object Home : BottomNavItem(Routes.HOME, Icons.Default.Home, "Inicio")
-    object Documents : BottomNavItem(Routes.DOCUMENTS, Icons.Default.Description, "Documentos")
-    object Stats : BottomNavItem(Routes.STATS, Icons.Default.BarChart, "Estadísticas")
-    object Profile : BottomNavItem(Routes.PROFILE, Icons.Default.AccountCircle, "Perfil")
+    object Home : BottomNavItem(Routes.HOME, Icons.Filled.Home, "Inicio")
+    object Documents : BottomNavItem(Routes.DOCUMENTS, Icons.Filled.List, "Documentos")
+    object Stats : BottomNavItem(Routes.STATS, Icons.Filled.Info, "Estadísticas")
+    object Profile : BottomNavItem(Routes.PROFILE, Icons.Filled.AccountCircle, "Perfil")
 }
 
 @Composable

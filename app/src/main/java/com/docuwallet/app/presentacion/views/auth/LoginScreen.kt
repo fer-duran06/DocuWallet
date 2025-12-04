@@ -103,7 +103,7 @@ fun LoginScreen(
             isPassword = true,
             isError = passwordError,
             errorMessage = if (passwordError) "La contraseña es requerida" else null,
-            onDone = {
+            onImeAction = {  // ✅ CAMBIADO: onDone → onImeAction
                 if (validateInputs(email, password)) {
                     viewModel.login(email.trim(), password)
                 } else {

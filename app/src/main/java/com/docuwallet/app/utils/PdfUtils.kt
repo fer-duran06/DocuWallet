@@ -3,176 +3,112 @@ package com.docuwallet.app.utils
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import com.itextpdf.io.image.ImageDataFactory
 import com.itextpdf.kernel.geom.PageSize
-import com.itextpdf.kernel.pdf.PdfDocument
 import com.itextpdf.kernel.pdf.PdfWriter
 import com.itextpdf.layout.Document
 import com.itextpdf.layout.element.Image
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 object PdfUtils {
 
-    private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss"
-
     /**
-     * Genera un PDF a partir de una lista de imágenes
-     * @param context Contexto de la aplicación
-     * @param imageUris Lista de URIs de las imágenes
-     * @param documentName Nombre del documento (opcional)
-     * @return File del PDF generado
+     * Generar PDF desde múltiples imágenes usando iText
      */
-    suspend fun generatePdfFromImages(
+    fun generatePdfFromImages(
         context: Context,
         imageUris: List<Uri>,
-        documentName: String? = null
-    ): File = withContext(Dispatchers.IO) {
-
-        if (imageUris.isEmpty()) {
-            throw IllegalArgumentException("La lista de imágenes está vacía")
+        documentName: String
+    ): File {
+        // Crear directorio de documentos si no existe
+        val documentsDir = File(context.cacheDir, "documents")
+        if (!documentsDir.exists()) {
+            documentsDir.mkdirs()
         }
 
         // Crear archivo PDF
-        val pdfFile = createPdfFile(context, documentName)
+        val pdfFileName = "${documentName.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
+        val pdfFile = File(documentsDir, pdfFileName)
 
-        // Crear documento PDF
+        // Crear PDF con iText
         val writer = PdfWriter(pdfFile)
-        val pdfDoc = PdfDocument(writer)
-        val document = Document(pdfDoc, PageSize.A4)
+        val pdfDoc = com.itextpdf.kernel.pdf.PdfDocument(writer)
+        val document = Document(pdfDoc)
 
         // Configurar márgenes
         document.setMargins(0f, 0f, 0f, 0f)
 
-        try {
-            // Agregar cada imagen como una página
-            imageUris.forEach { uri ->
-                addImageToDocument(context, document, pdfDoc, uri)
+        // Agregar cada imagen como una página
+        imageUris.forEachIndexed { index, uri ->
+            try {
+                // Leer imagen
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+
+                if (bitmap != null) {
+                    // Convertir bitmap a ByteArray
+                    val stream = ByteArrayOutputStream()
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+                    val byteArray = stream.toByteArray()
+                    stream.close()
+
+                    // Crear ImageData de iText
+                    val imageData = ImageDataFactory.create(byteArray)
+                    val image = Image(imageData)
+
+                    // Calcular tamaño de página basado en la imagen
+                    val pageWidth = bitmap.width.toFloat()
+                    val pageHeight = bitmap.height.toFloat()
+
+                    // Agregar nueva página con el tamaño de la imagen
+                    if (index > 0) {
+                        document.add(com.itextpdf.layout.element.AreaBreak(PageSize(pageWidth, pageHeight)))
+                    } else {
+                        pdfDoc.defaultPageSize = PageSize(pageWidth, pageHeight)
+                    }
+
+                    // Escalar imagen para que ocupe toda la página
+                    image.scaleToFit(pageWidth, pageHeight)
+                    image.setFixedPosition(0f, 0f)
+
+                    // Agregar imagen al documento
+                    document.add(image)
+
+                    // Limpiar bitmap
+                    bitmap.recycle()
+
+                    android.util.Log.d("PdfUtils", "Página ${index + 1}/${imageUris.size} agregada al PDF")
+                } else {
+                    android.util.Log.e("PdfUtils", "Error al decodificar imagen ${index + 1}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PdfUtils", "Error al procesar imagen ${index + 1}", e)
             }
-        } finally {
-            document.close()
         }
 
-        return@withContext pdfFile
+        // Cerrar documento
+        document.close()
+
+        android.util.Log.d("PdfUtils", "PDF generado exitosamente: ${pdfFile.absolutePath}")
+        android.util.Log.d("PdfUtils", "Tamaño del PDF: ${pdfFile.length() / 1024} KB")
+        android.util.Log.d("PdfUtils", "Total de páginas: ${imageUris.size}")
+
+        return pdfFile
     }
 
     /**
-     * Agrega una imagen al documento PDF
+     * Generar PDF desde una sola imagen
      */
-    private fun addImageToDocument(
+    fun generatePdfFromSingleImage(
         context: Context,
-        document: Document,
-        pdfDoc: PdfDocument,
-        imageUri: Uri
-    ) {
-        context.contentResolver.openInputStream(imageUri)?.use { inputStream ->
-            // Leer imagen
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-
-            // Comprimir imagen si es necesario (para optimizar tamaño del PDF)
-            val compressedBitmap = compressBitmapIfNeeded(bitmap)
-
-            // Convertir a byte array
-            val byteArray = bitmapToByteArray(compressedBitmap)
-
-            // Crear imagen para iText
-            val imageData = ImageDataFactory.create(byteArray)
-            val image = Image(imageData)
-
-            // Ajustar imagen al tamaño de la página
-            val pageSize = pdfDoc.defaultPageSize
-            image.scaleToFit(pageSize.width, pageSize.height)
-
-            // Centrar imagen
-            image.setFixedPosition(
-                (pageSize.width - image.imageScaledWidth) / 2,
-                (pageSize.height - image.imageScaledHeight) / 2
-            )
-
-            // Agregar imagen al documento
-            document.add(image)
-
-            // Limpiar bitmap
-            if (compressedBitmap != bitmap) {
-                compressedBitmap.recycle()
-            }
-            bitmap.recycle()
-        } ?: throw IllegalArgumentException("No se pudo leer la imagen: $imageUri")
-    }
-
-    /**
-     * Comprime el bitmap si es muy grande
-     */
-    private fun compressBitmapIfNeeded(bitmap: Bitmap): Bitmap {
-        val maxWidth = 1200
-        val maxHeight = 1600
-
-        if (bitmap.width <= maxWidth && bitmap.height <= maxHeight) {
-            return bitmap
-        }
-
-        val ratio = minOf(
-            maxWidth.toFloat() / bitmap.width,
-            maxHeight.toFloat() / bitmap.height
-        )
-
-        val newWidth = (bitmap.width * ratio).toInt()
-        val newHeight = (bitmap.height * ratio).toInt()
-
-        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
-    }
-
-    /**
-     * Convierte Bitmap a ByteArray
-     */
-    private fun bitmapToByteArray(bitmap: Bitmap): ByteArray {
-        val outputStream = java.io.ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-        return outputStream.toByteArray()
-    }
-
-    /**
-     * Crea el archivo PDF en el directorio de documentos
-     */
-    private fun createPdfFile(context: Context, documentName: String?): File {
-        val timestamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US)
-            .format(System.currentTimeMillis())
-
-        val fileName = documentName?.let {
-            "${it.replace(" ", "_")}_$timestamp.pdf"
-        } ?: "document_$timestamp.pdf"
-
-        val storageDir = File(context.cacheDir, "documents")
-        if (!storageDir.exists()) {
-            storageDir.mkdirs()
-        }
-
-        return File(storageDir, fileName)
-    }
-
-    /**
-     * Obtiene el tamaño del archivo en MB
-     */
-    fun getFileSizeInMB(file: File): Double {
-        return file.length() / (1024.0 * 1024.0)
-    }
-
-    /**
-     * Cuenta el número de páginas en un PDF
-     */
-    suspend fun countPdfPages(pdfFile: File): Int = withContext(Dispatchers.IO) {
-        try {
-            val pdfDoc = PdfDocument(com.itextpdf.kernel.pdf.PdfReader(pdfFile))
-            val pageCount = pdfDoc.numberOfPages
-            pdfDoc.close()
-            pageCount
-        } catch (e: Exception) {
-            0
-        }
+        imageUri: Uri,
+        documentName: String
+    ): File {
+        return generatePdfFromImages(context, listOf(imageUri), documentName)
     }
 }

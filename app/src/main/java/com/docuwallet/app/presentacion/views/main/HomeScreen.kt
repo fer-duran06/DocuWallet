@@ -4,12 +4,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.docuwallet.app.data.repository.DocumentRepository
 import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -18,6 +23,27 @@ fun HomeScreen(
     viewModel: AuthViewModel,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
+    val repository = remember { DocumentRepository(context) }
+    val scope = rememberCoroutineScope()
+
+    var totalDocuments by remember { mutableStateOf(0) }
+    var totalSpaceMB by remember { mutableStateOf(0.0) }
+    var documentsExpiringSoon by remember { mutableStateOf(0) }
+
+    // Cargar estadísticas
+    LaunchedEffect(Unit) {
+        scope.launch {
+            val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@launch
+            val stats = repository.getStatistics(userId)
+            totalDocuments = stats.totalDocuments
+            totalSpaceMB = stats.totalStorageBytes / (1024.0 * 1024.0)
+
+            // TODO: Calcular documentos próximos a vencer cuando agregues expiryDate
+            documentsExpiringSoon = 0
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -61,24 +87,24 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Estadísticas
+            // Estadísticas REALES
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 StatCard(
                     title = "Documentos",
-                    value = "0"
+                    value = totalDocuments.toString()
                 )
 
                 StatCard(
                     title = "Alertas",
-                    value = "0"
+                    value = documentsExpiringSoon.toString()
                 )
 
                 StatCard(
                     title = "Espacio",
-                    value = "0 MB"
+                    value = "%.1f MB".format(totalSpaceMB)
                 )
             }
 
@@ -102,11 +128,19 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text(
-                        text = "No hay documentos próximos a vencer",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
+                    if (documentsExpiringSoon > 0) {
+                        Text(
+                            text = "⚠️ Tienes $documentsExpiringSoon documento(s) próximo(s) a vencer",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        Text(
+                            text = "✅ No hay documentos próximos a vencer",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
                 }
             }
         }
