@@ -16,15 +16,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
+import com.docuwallet.app.presentacion.viewmodels.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     viewModel: AuthViewModel,
     onLogout: () -> Unit,
-    onNavigateToFileManager: () -> Unit
+    onNavigateToFileManager: () -> Unit,
+    profileViewModel: ProfileViewModel = viewModel()
 ) {
+    val profileState by profileViewModel.uiState.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -32,138 +37,199 @@ fun ProfileScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())  // ← AGREGAR SCROLL
-        ) {
-            // Header azul
+        if (profileState.isLoading) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .background(MaterialTheme.colorScheme.primary),
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (profileState.error != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Avatar
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(CircleShape)
-                            .background(Color.White),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.AccountCircle,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.size(60.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
+                    Icon(
+                        Icons.Default.Error,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = profileState.error ?: "Error desconocido",
+                        color = MaterialTheme.colorScheme.error
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = "Omar Selvas",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-
-                    Text(
-                        text = "omar@gmail.com",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f)
-                    )
+                    Button(onClick = { profileViewModel.refreshProfile() }) {
+                        Text("Reintentar")
+                    }
                 }
             }
-
-            // Stats
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                ProfileStatCard("9", "Documentos")
-                ProfileStatCard("175", "MB usados")
-                ProfileStatCard("23", "Accesos")
-            }
-
-            Divider()
-
-            // Información Personal
-            Text(
-                text = "👤 Información Personal",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(16.dp)
-            )
-
-            ProfileInfoItem("Nombre completo", "Omar Kálid Selvas Álvares")
-            ProfileInfoItem("Correo", "omar@gmail.com")
-            ProfileInfoItem("Teléfono", "967 216 8248")
-            ProfileInfoItem("Miembro desde", "octubre 2025")
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // Configuración
-            Text(
-                text = "⚙️ Configuración",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(16.dp)
-            )
-
-            // Cambiar contraseña
-            ProfileMenuItem("Cambiar contraseña", "Cambiar", Icons.Default.Lock)
-
-            // Notificaciones
-            ProfileMenuItem("Notificaciones", "Activado", Icons.Default.Notifications)
-
-            // Modo oscuro con Switch
-            ProfileMenuItemWithSwitch(
-                label = "Modo oscuro",
-                icon = Icons.Default.DarkMode
-            )
-
-            // Gestionar archivos - CLICKEABLE
-            ProfileMenuItemClickable(
-                label = "Gestionar archivos",
-                action = "Ver",
-                icon = Icons.Default.Folder,
-                onClick = onNavigateToFileManager
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Botones
+        } else {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
             ) {
-                Button(
-                    onClick = { /* TODO */ },
-                    modifier = Modifier.fillMaxWidth()
+                // Header azul
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Editar Perfil")
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Avatar
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(CircleShape)
+                                .background(Color.White),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (profileState.photoUrl != null) {
+                                // TODO: Cargar imagen con Coil
+                                Icon(
+                                    Icons.Default.AccountCircle,
+                                    contentDescription = "Avatar",
+                                    modifier = Modifier.size(60.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.AccountCircle,
+                                    contentDescription = "Avatar",
+                                    modifier = Modifier.size(60.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = profileState.userName,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+
+                        Text(
+                            text = profileState.userEmail,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.9f)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = onLogout,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                // Stats
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Text("Cerrar Sesión")
+                    ProfileStatCard(
+                        profileState.totalDocuments.toString(),
+                        "Documentos"
+                    )
+                    ProfileStatCard(
+                        "%.0f".format(profileState.totalStorageMB),
+                        "MB usados"
+                    )
+                    ProfileStatCard(
+                        profileState.totalAccesses.toString(),
+                        "Accesos"
+                    )
+                }
+
+                Divider()
+
+                // Información Personal
+                Text(
+                    text = "👤 Información Personal",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(16.dp)
+                )
+
+                ProfileInfoItem("Nombre completo", profileState.userName)
+                ProfileInfoItem("Correo", profileState.userEmail)
+
+                if (profileState.userPhone.isNotBlank()) {
+                    ProfileInfoItem("Teléfono", profileState.userPhone)
+                }
+
+                ProfileInfoItem("Miembro desde", profileState.memberSince)
+
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+                // Configuración
+                Text(
+                    text = "⚙️ Configuración",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(16.dp)
+                )
+
+                // Cambiar contraseña
+                ProfileMenuItem("Cambiar contraseña", "Cambiar", Icons.Default.Lock)
+
+                // Notificaciones
+                ProfileMenuItem("Notificaciones", "Activado", Icons.Default.Notifications)
+
+                // Modo oscuro con Switch
+                ProfileMenuItemWithSwitch(
+                    label = "Modo oscuro",
+                    icon = Icons.Default.DarkMode
+                )
+
+                // Gestionar archivos - CLICKEABLE
+                ProfileMenuItemClickable(
+                    label = "Gestionar archivos",
+                    action = "Ver",
+                    icon = Icons.Default.Folder,
+                    onClick = onNavigateToFileManager
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Botones
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Button(
+                        onClick = { /* TODO: Navegar a EditProfileScreen */ },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Editar Perfil")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = onLogout,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Cerrar Sesión")
+                    }
                 }
             }
         }
