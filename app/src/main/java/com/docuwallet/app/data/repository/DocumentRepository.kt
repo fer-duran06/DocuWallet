@@ -22,90 +22,44 @@ class DocumentRepository(private val context: Context) {
     private val auth = FirebaseAuth.getInstance()
     private val storageService = FirebaseStorageService()
     private val documentService = FirebaseDocumentService()
-
     private val TAG = "DocumentRepository"
 
-    /**
-     * Obtener todos los documentos del usuario (desde Room)
-     */
-    fun getUserDocuments(userId: String): Flow<List<DocumentEntity>> {
-        return documentDao.getUserDocuments(userId)
-    }
+    // --- MÉTODOS DE LECTURA ---
+    fun getUserDocuments(userId: String): Flow<List<DocumentEntity>> = documentDao.getUserDocuments(userId)
+    fun getDocumentsByCategory(userId: String, category: String): Flow<List<DocumentEntity>> = documentDao.getDocumentsByCategory(userId, category)
+    fun getFavoriteDocuments(userId: String): Flow<List<DocumentEntity>> = documentDao.getFavoriteDocuments(userId)
 
-    /**
-     * Obtener documentos por categoría
-     */
-    fun getDocumentsByCategory(userId: String, category: String): Flow<List<DocumentEntity>> {
-        return documentDao.getDocumentsByCategory(userId, category)
-    }
-
-    /**
-     * Obtener documentos favoritos
-     */
-    fun getFavoriteDocuments(userId: String): Flow<List<DocumentEntity>> {
-        return documentDao.getFavoriteDocuments(userId)
-    }
-
-    /**
-     * Obtener documento por ID
-     */
     suspend fun getDocumentById(documentId: String): DocumentEntity? {
-        return try {
-            Log.d(TAG, "Buscando documento con ID: $documentId")
-            val doc = documentDao.getDocumentById(documentId)
-
-            if (doc == null) {
-                Log.w(TAG, "Documento no encontrado en Room: $documentId")
-            } else {
-                Log.d(TAG, "Documento encontrado - Nombre: ${doc.name}, Categoría: ${doc.category}")
-            }
-
-            doc
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al obtener documento: $documentId", e)
-            null
-        }
+        return try { documentDao.getDocumentById(documentId) } catch (e: Exception) { null }
     }
 
-    /**
-     * Incrementar contador de accesos
-     */
+    // --- MÉTODOS DE ESCRITURA ---
     suspend fun incrementAccessCount(documentId: String) {
-        try {
-            documentDao.incrementAccessCount(documentId)
-            Log.d(TAG, "Contador de accesos incrementado para: $documentId")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al incrementar contador", e)
-        }
+        try { documentDao.incrementAccessCount(documentId) } catch (e: Exception) { Log.e(TAG, "Error contador", e) }
     }
 
-    /**
-     * Guardar documento completo (PDF + metadata)
-     * Guarda primero en Room (local), luego intenta subir a Firebase
-     */
-    suspend fun saveDocument(
+    // Compatibilidad
+    suspend fun saveDocument(imageUris: List<Uri>, name: String, category: String, notes: String, pageCount: Int): Result<String> {
+        return saveDocumentWithExpiry(imageUris, name, category, notes, pageCount, null)
+    }
+
+    // ✨ LA FUNCIÓN PRINCIPAL
+    suspend fun saveDocumentWithExpiry(
         imageUris: List<Uri>,
         name: String,
         category: String,
         notes: String,
-        pageCount: Int
+        pageCount: Int,
+        expiryDate: Long? = null // Recibe Long
     ): Result<String> {
         return try {
-            val userId = auth.currentUser?.uid
-                ?: return Result.failure(Exception("Usuario no autenticado"))
+            val userId = auth.currentUser?.uid ?: return Result.failure(Exception("Usuario no autenticado"))
 
-            // 1. Generar PDF localmente
-            val pdfFile = PdfUtils.generatePdfFromImages(
-                context = context,
-                imageUris = imageUris,
-                documentName = name
-            )
+            // 1. Generar PDF
+            val pdfFile = PdfUtils.generatePdfFromImages(context, imageUris, name)
+            if (!pdfFile.exists() || pdfFile.length() == 0L) return Result.failure(Exception("Error al generar PDF"))
 
-            if (!pdfFile.exists() || pdfFile.length() == 0L) {
-                return Result.failure(Exception("Error al generar PDF"))
-            }
-
-            // 2. Crear entidad para Room
+            // 2. Crear Entidad LOCAL (Room usa Long)
             val documentId = UUID.randomUUID().toString()
             val currentTime = System.currentTimeMillis()
 
@@ -120,38 +74,33 @@ class DocumentRepository(private val context: Context) {
                 pdfFileName = pdfFile.name,
                 fileSize = pdfFile.length(),
                 pageCount = pageCount,
+                expiryDate = expiryDate, // Se guarda directo como Long
                 createdAt = currentTime,
                 updatedAt = currentTime,
-                isSynced = false
+                isSynced = false,
+                isFavorite = false,
+                accessCount = 0
             )
 
-            // 3. Guardar en Room (local)
+            // 3. Guardar en BD Local
             documentDao.insertDocument(documentEntity)
-            Log.d(TAG, "Documento guardado en Room: $documentId - ${documentEntity.name}")
 
-            // 4. Intentar subir a Firebase (en background)
+            // 4. Subir a Firebase
             tryUploadToFirebase(documentEntity, pdfFile)
 
             Result.success(documentId)
-
         } catch (e: Exception) {
-            Log.e(TAG, "Error al guardar documento", e)
+            Log.e(TAG, "Error guardando", e)
             Result.failure(e)
         }
     }
 
-    /**
-     * Intentar subir documento a Firebase
-     */
     private suspend fun tryUploadToFirebase(document: DocumentEntity, pdfFile: File) {
         try {
-            Log.d(TAG, "Intentando subir a Firebase: ${document.id}")
+            val pdfUrl = storageService.uploadPdf(document.userId, pdfFile, pdfFile.name)
 
-            val pdfUrl = storageService.uploadPdf(
-                userId = document.userId,
-                file = pdfFile,
-                fileName = pdfFile.name
-            )
+            // Convertir Long a Timestamp para Firebase
+            val expiryTimestamp = document.expiryDate?.let { Timestamp(it / 1000, 0) }
 
             val firebaseDoc = DocumentModel(
                 id = document.id,
@@ -163,6 +112,7 @@ class DocumentRepository(private val context: Context) {
                 pdfFileName = document.pdfFileName,
                 fileSize = document.fileSize,
                 pageCount = document.pageCount,
+                expiryDate = expiryTimestamp, // Firebase usa Timestamp
                 createdAt = Timestamp(document.createdAt / 1000, 0),
                 updatedAt = Timestamp(document.updatedAt / 1000, 0),
                 isFavorite = document.isFavorite
@@ -171,98 +121,55 @@ class DocumentRepository(private val context: Context) {
             documentService.saveDocument(firebaseDoc)
             documentDao.updateSyncStatus(document.id, isSynced = true, pdfUrl = pdfUrl)
 
-            Log.d(TAG, "Documento sincronizado con Firebase: ${document.id}")
-
         } catch (e: Exception) {
-            Log.e(TAG, "Error al subir a Firebase (quedará pendiente): ${e.message}")
+            Log.e(TAG, "Error subida Firebase: ${e.message}")
         }
     }
 
-    /**
-     * Sincronizar documentos pendientes con Firebase
-     */
     suspend fun syncPendingDocuments(): Result<Int> {
         return try {
-            val unsyncedDocs = documentDao.getUnsyncedDocuments()
-            var syncedCount = 0
-
-            unsyncedDocs.forEach { doc ->
-                val pdfFile = File(doc.pdfLocalPath)
-                if (pdfFile.exists()) {
-                    tryUploadToFirebase(doc, pdfFile)
-                    syncedCount++
+            val unsynced = documentDao.getUnsyncedDocuments()
+            var count = 0
+            unsynced.forEach { doc ->
+                val file = File(doc.pdfLocalPath)
+                if (file.exists()) {
+                    tryUploadToFirebase(doc, file)
+                    count++
                 }
             }
-
-            Result.success(syncedCount)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+            Result.success(count)
+        } catch (e: Exception) { Result.failure(e) }
     }
 
-    /**
-     * Alternar favorito
-     */
-    suspend fun toggleFavorite(documentId: String, isFavorite: Boolean): Result<Unit> {
+    suspend fun toggleFavorite(id: String, isFav: Boolean): Result<Unit> {
         return try {
-            documentDao.updateFavoriteStatus(documentId, isFavorite)
-
-            try {
-                documentService.toggleFavorite(documentId, isFavorite)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error al actualizar favorito en Firebase", e)
-            }
-
+            documentDao.updateFavoriteStatus(id, isFav)
+            try { documentService.toggleFavorite(id, isFav) } catch (_: Exception) {}
             Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        } catch (e: Exception) { Result.failure(e) }
     }
 
-    /**
-     * Eliminar documento
-     */
-    suspend fun deleteDocument(documentId: String): Result<Unit> {
+    suspend fun deleteDocument(id: String): Result<Unit> {
         return try {
-            val document = documentDao.getDocumentById(documentId)
-                ?: return Result.failure(Exception("Documento no encontrado"))
-
-            val pdfFile = File(document.pdfLocalPath)
-            if (pdfFile.exists()) {
-                pdfFile.delete()
-            }
-
-            documentDao.deleteDocumentById(documentId)
-
+            val doc = documentDao.getDocumentById(id) ?: return Result.failure(Exception("No existe"))
+            File(doc.pdfLocalPath).delete()
+            documentDao.deleteDocumentById(id)
             try {
-                if (document.pdfUrl != null) {
-                    storageService.deletePdf(document.pdfUrl!!)
-                }
-                documentService.deleteDocument(documentId)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error al eliminar de Firebase", e)
-            }
-
+                doc.pdfUrl?.let { storageService.deletePdf(it) }
+                documentService.deleteDocument(id)
+            } catch (_: Exception) {}
             Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        } catch (e: Exception) { Result.failure(e) }
     }
 
-    /**
-     * Obtener estadísticas
-     */
     suspend fun getStatistics(userId: String): DocumentStatistics {
         val count = documentDao.getDocumentCount(userId)
-        val totalSize = documentDao.getTotalStorageUsed(userId) ?: 0L
-
-        return DocumentStatistics(
-            totalDocuments = count,
-            totalStorageBytes = totalSize
-        )
+        val size = documentDao.getTotalStorageUsed(userId) ?: 0L
+        return DocumentStatistics(count, size)
     }
 }
 
+// 👇 ESTO ERA LO QUE FALTABA Y CAUSABA TODOS LOS ERRORES EN LAS OTRAS PANTALLAS
 data class DocumentStatistics(
     val totalDocuments: Int,
     val totalStorageBytes: Long

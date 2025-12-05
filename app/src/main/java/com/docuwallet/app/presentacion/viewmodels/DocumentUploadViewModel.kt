@@ -23,7 +23,6 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
     private val _saveState = MutableStateFlow(DocumentSaveState())
     val saveState: StateFlow<DocumentSaveState> = _saveState.asStateFlow()
 
-    // Almacenar el PDF generado temporalmente
     private var generatedPdfFile: File? = null
 
     fun generatePdf(
@@ -59,6 +58,7 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    // Función wrapper para compatibilidad
     fun saveDocument(
         context: Context,
         imageUris: List<Uri>,
@@ -67,17 +67,31 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
         notes: String,
         pageCount: Int
     ) {
+        saveDocumentWithExpiry(context, imageUris, name, category, notes, pageCount, null)
+    }
+
+    // ✨ FUNCIÓN CORREGIDA: Pasa el Long directamente
+    fun saveDocumentWithExpiry(
+        context: Context,
+        imageUris: List<Uri>,
+        name: String,
+        category: String,
+        notes: String,
+        pageCount: Int,
+        expiryDate: Long?
+    ) {
         viewModelScope.launch {
             try {
                 _saveState.value = DocumentSaveState(isLoading = true)
 
-                // Guardar usando el Repository (Room + Firebase)
-                val result = repository.saveDocument(
+                // NO convertimos a String aquí. Enviamos el Long (timestamp) al repositorio.
+                val result = repository.saveDocumentWithExpiry(
                     imageUris = imageUris,
                     name = name,
                     category = category,
                     notes = notes,
-                    pageCount = pageCount
+                    pageCount = pageCount,
+                    expiryDate = expiryDate // <--- Pasamos el Long directo
                 )
 
                 if (result.isSuccess) {
