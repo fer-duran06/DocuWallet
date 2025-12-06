@@ -10,17 +10,22 @@ data class DocumentEntity(
     val userId: String,
     val name: String,
     val category: String,
-    val notes: String,
-    val pdfLocalPath: String,           // Ruta local del PDF
-    val pdfUrl: String? = null,         // URL de Firebase Storage (cuando se suba)
+    val notes: String = "",
+
+    // Rutas de almacenamiento
+    val pdfLocalPath: String,           // Ruta local (Room/SQLite)
+    val pdfUrl: String? = null,         // URL de Firebase Storage (legacy)
+    val cloudinaryUrl: String? = null,  // ✨ NUEVO: URL de Cloudinary
+
     val pdfFileName: String,
     val fileSize: Long,
     val pageCount: Int,
-    val expiryDate: Long? = null,       // Timestamp en millis
-    val createdAt: Long,                // Timestamp en millis
-    val updatedAt: Long,                // Timestamp en millis
-    val isFavorite: Boolean = false,
-    val isSynced: Boolean = false,       // ¿Ya está en Firebase?
-    val accessCount: Int = 0  // ← AGREGAR ESTE CAMPO
 
+    // Campos adicionales
+    val expiryDate: Long? = null,       // Fecha de vencimiento (timestamp)
+    val createdAt: Long,
+    val updatedAt: Long,
+    val isSynced: Boolean = false,
+    val isFavorite: Boolean = false,
+    val accessCount: Int = 0
 )

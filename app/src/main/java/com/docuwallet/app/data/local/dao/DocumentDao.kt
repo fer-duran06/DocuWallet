@@ -54,4 +54,7 @@ interface DocumentDao {
 
     @Query("UPDATE documents SET accessCount = accessCount + 1 WHERE id = :documentId")
     suspend fun incrementAccessCount(documentId: String)
+
+    @Query("UPDATE documents SET cloudinaryUrl = :cloudinaryUrl, isSynced = :isSynced WHERE id = :documentId")
+    suspend fun updateCloudinaryUrl(documentId: String, cloudinaryUrl: String, isSynced: Boolean)
 }
