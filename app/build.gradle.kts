@@ -114,4 +114,12 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // ✨ Cloudinary para almacenamiento en la nube
+    implementation("com.cloudinary:cloudinary-android:2.5.0")
+    implementation("com.cloudinary:cloudinary-core:1.36.0")
+
+    // OkHttp (si no lo tienes ya)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
 }
