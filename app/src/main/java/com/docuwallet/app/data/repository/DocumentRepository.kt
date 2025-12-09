@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.File
+import java.util.Calendar
 import java.util.UUID
 
 data class SharedDocument(
@@ -95,6 +96,13 @@ class DocumentRepository(
 
     suspend fun getDocumentById(documentId: String): DocumentEntity? {
         return try { documentDao.getDocumentById(documentId) } catch (e: Exception) { null }
+    }
+
+    suspend fun getDocumentsExpiringSoon(userId: String, days: Int): List<DocumentEntity> {
+        val calendar = Calendar.getInstance()
+        calendar.add(Calendar.DAY_OF_YEAR, days)
+        val expiryLimit = calendar.timeInMillis
+        return documentDao.getDocumentsExpiringSoon(userId, expiryLimit)
     }
 
     suspend fun incrementAccessCount(documentId: String) {
