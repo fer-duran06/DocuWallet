@@ -1,11 +1,9 @@
 package com.docuwallet.app.presentacion.views.main
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,8 +13,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.docuwallet.app.data.local.entity.DocumentEntity
+import com.docuwallet.app.presentacion.viewmodels.FileManagerViewModel
+import com.docuwallet.app.presentacion.viewmodels.FileManagerViewModelFactory
+import java.text.SimpleDateFormat
+import java.util.*
 
 data class DocumentItem(
     val id: String,
@@ -25,133 +31,98 @@ data class DocumentItem(
     val icon: ImageVector,
     val iconColor: Color,
     val expiryDate: String,
-    val size: String,
-    var isSelected: Boolean = false,
-    var isFavorite: Boolean = false
+    val size: String
 )
+
+fun DocumentEntity.toDocumentItem(): DocumentItem {
+    val (icon, iconColor) = when (category) {
+        "Facturas" -> Icons.Default.Receipt to Color(0xFF4CAF50)
+        "Identificación" -> Icons.Default.Person to Color(0xFF2196F3)
+        "Contratos" -> Icons.Default.Description to Color(0xFFFF9800)
+        else -> Icons.Default.Article to Color.Gray
+    }
+    val formattedDate = expiryDate?.let {
+        SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(it))
+    } ?: "Sin vencimiento"
+
+    val formattedSize = "${(fileSize / 1024)} KB"
+
+    return DocumentItem(
+        id = id,
+        name = name,
+        category = category,
+        icon = icon,
+        iconColor = iconColor,
+        expiryDate = formattedDate,
+        size = formattedSize
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileManagerScreen(
     onNavigateBack: () -> Unit
 ) {
-    // Estado de los documentos
-    var documents by remember {
-        mutableStateOf(
-            listOf(
-                DocumentItem(
-                    id = "1",
-                    name = "INE",
-                    category = "Identificación",
-                    icon = Icons.Default.Badge,
-                    iconColor = Color(0xFF2196F3),
-                    expiryDate = "Vence: 15/06/2030",
-                    size = "2.0 KB"
-                ),
-                DocumentItem(
-                    id = "2",
-                    name = "Pasaporte",
-                    category = "Viajes",
-                    icon = Icons.Default.Flight,
-                    iconColor = Color(0xFF2196F3),
-                    expiryDate = "Vence: 20/11/2025",
-                    size = "3 MB"
-                ),
-                DocumentItem(
-                    id = "3",
-                    name = "Licencia de Conducir",
-                    category = "Identificación",
-                    icon = Icons.Default.Badge,
-                    iconColor = Color(0xFF2196F3),
-                    expiryDate = "Vence: 15/08/2030",
-                    size = "1 MB"
-                ),
-                DocumentItem(
-                    id = "4",
-                    name = "Trabajo movil",
-                    category = "Trabajo",
-                    icon = Icons.Default.Work,
-                    iconColor = Color(0xFF2196F3),
-                    expiryDate = "sin vencimiento",
-                    size = "5 MB"
-                )
-            )
-        )
-    }
+    val context = LocalContext.current
+    val viewModel: FileManagerViewModel = viewModel(factory = FileManagerViewModelFactory(context))
 
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedFilter by remember { mutableStateOf("Todos") }
-    val selectedCount = documents.count { it.isSelected }
+    val documentsFromDb by viewModel.documents.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val selectedDocuments by viewModel.selectedDocuments.collectAsState()
+    var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
+
+    val documents = documentsFromDb.map { it.toDocumentItem() }
+    val selectedCount = selectedDocuments.size
     val hasSelection = selectedCount > 0
+    val allSelected = documents.isNotEmpty() && selectedCount == documents.size
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     if (hasSelection) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFFFF9800)
-                            ) {
-                                Text(
-                                    text = "$selectedCount Seleccionados",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                        }
+                        Text("$selectedCount Seleccionados")
                     } else {
                         Text("Gestión de Archivos")
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, "Volver")
+                    if (hasSelection) {
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Limpiar selección")
+                        }
+                    } else {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
+                        }
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            if (allSelected) {
+                                viewModel.clearSelection()
+                            } else {
+                                viewModel.selectAllDocuments()
+                            }
+                        },
+                        enabled = documents.isNotEmpty() // Correcto: Se deshabilita si no hay documentos, pero sigue visible.
+                    ) {
+                        Icon(
+                            imageVector = if (allSelected) Icons.Default.CheckBox else Icons.Default.SelectAll,
+                            contentDescription = if (allSelected) "Deseleccionar Todo" else "Seleccionar Todo"
+                        )
+                    }
+
                     if (hasSelection) {
-                        // Botón Favorito
-                        IconButton(
-                            onClick = {
-                                documents = documents.map {
-                                    if (it.isSelected) it.copy(isFavorite = !it.isFavorite)
-                                    else it
-                                }
-                            }
-                        ) {
-                            Icon(
-                                Icons.Default.Star,
-                                "Favorito",
-                                tint = Color(0xFFFF9800)
-                            )
+                        IconButton(onClick = { viewModel.toggleFavoriteForSelected() }) {
+                            Icon(Icons.Default.Star, "Favorito", tint = Color(0xFFFF9800))
                         }
-
-                        // Botón Compartir
-                        IconButton(onClick = { /* TODO */ }) {
-                            Icon(
-                                Icons.Default.Share,
-                                "Compartir",
-                                tint = Color(0xFF4CAF50)
-                            )
+                        IconButton(onClick = { viewModel.shareSelectedDocuments() }) {
+                            Icon(Icons.Default.Share, "Compartir", tint = Color(0xFF4CAF50))
                         }
-
-                        // Botón Eliminar
-                        IconButton(
-                            onClick = {
-                                documents = documents.filterNot { it.isSelected }
-                            }
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                "Eliminar",
-                                tint = Color(0xFFF44336)
-                            )
+                        IconButton(onClick = { showDeleteConfirmationDialog = true }) {
+                            Icon(Icons.Default.Delete, "Eliminar", tint = Color(0xFFF44336))
                         }
                     }
                 },
@@ -169,99 +140,100 @@ fun FileManagerScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Barra de búsqueda
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar Documentos...") },
+                onValueChange = { viewModel.onSearchQueryChanged(it) },
+                placeholder = { Text("Buscar por nombre, categoría o ID...") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
                 shape = RoundedCornerShape(25.dp),
                 leadingIcon = {
-                    Icon(Icons.Default.Search, "Buscar")
+                    Icon(Icons.Filled.Search, "Buscar")
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Limpiar búsqueda")
+                        }
+                    }
                 },
                 singleLine = true
             )
 
-            // Filtros
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val filters = listOf("Todos", "Favoritos", "Identificación", "Salud", "Viajes")
-
-                filters.forEach { filter ->
-                    FilterChip(
-                        selected = selectedFilter == filter,
-                        onClick = { selectedFilter = filter },
-                        label = { Text(filter) }
-                    )
-                }
-            }
-
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Botón Filtrar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.FilterList, "Filtrar", modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Filtrar", style = MaterialTheme.typography.bodyMedium)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Lista de documentos
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(documents) { document ->
-                    DocumentCard(
-                        document = document,
-                        onToggleSelection = {
-                            documents = documents.map {
-                                if (it.id == document.id) it.copy(isSelected = !it.isSelected)
-                                else it
-                            }
-                        }
+            if (documents.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No se encontraron documentos.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(16.dp)
                     )
+                }
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(documents, key = { it.id }) { document ->
+                        DocumentCard(
+                            document = document,
+                            isSelected = selectedDocuments.contains(document.id),
+                            onToggleSelection = { viewModel.toggleDocumentSelection(document.id) }
+                        )
+                    }
                 }
             }
         }
     }
+
+    if (showDeleteConfirmationDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmationDialog = false },
+            title = { Text("Confirmar Eliminación") },
+            text = { Text("¿Estás seguro de que quieres eliminar $selectedCount documento(s)? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteSelectedDocuments()
+                        showDeleteConfirmationDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
+                ) {
+                    Text("Eliminar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmationDialog = false }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentCard(
     document: DocumentItem,
+    isSelected: Boolean,
     onToggleSelection: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (document.isSelected) {
-                    Modifier.background(
-                        Color(0xFFFFF9C4),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                } else {
-                    Modifier
-                }
-            ),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (document.isSelected) Color(0xFFFFF9C4) else Color.White
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        onClick = onToggleSelection
     ) {
         Row(
             modifier = Modifier
@@ -270,15 +242,13 @@ fun DocumentCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Checkbox
             Checkbox(
-                checked = document.isSelected,
+                checked = isSelected,
                 onCheckedChange = { onToggleSelection() }
             )
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Icono
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -298,28 +268,12 @@ fun DocumentCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Información
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = document.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = document.expiryDate,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = document.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Text(text = document.expiryDate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }
 
-            // Tamaño
-            Text(
-                text = document.size,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
+            Text(text = document.size, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
         }
     }
 }

@@ -1,107 +1,105 @@
 package com.docuwallet.app.presentacion.viewmodels
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docuwallet.app.data.repository.DocumentRepository
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
+import kotlinx.coroutines.tasks.await
 
 data class ProfileUiState(
+    val userName: String? = null,
+    val userEmail: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
-
-    // Información del usuario
-    val userName: String = "",
-    val userEmail: String = "",
-    val userPhone: String = "",
-    val memberSince: String = "",
-    val photoUrl: String? = null,
-
-    // Estadísticas
-    val totalDocuments: Int = 0,
-    val totalStorageMB: Double = 0.0,
-    val totalAccesses: Int = 0
+    val isSaveSuccess: Boolean = false
 )
 
-class ProfileViewModel(application: Application) : AndroidViewModel(application) {
+class ProfileViewModel : ViewModel() {
 
-    private val repository = DocumentRepository(application.applicationContext)
     private val auth = FirebaseAuth.getInstance()
+    private val firestore = Firebase.firestore
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
-        loadProfileData()
+        loadUserProfile()
     }
 
-    fun loadProfileData() {
+    fun loadUserProfile() {
+        _uiState.update { it.copy(isLoading = true) }
+        val user = auth.currentUser
+        if (user != null) {
+            _uiState.update {
+                it.copy(
+                    userName = user.displayName,
+                    userEmail = user.email,
+                    isLoading = false,
+                    isSaveSuccess = false, // Resetear al cargar
+                    error = null
+                )
+            }
+        } else {
+            _uiState.update { it.copy(isLoading = false, error = "Usuario no autenticado.") }
+        }
+    }
+
+    fun updateUserName(newName: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null, isSaveSuccess = false) }
+            val user = auth.currentUser ?: run {
+                _uiState.update { it.copy(isLoading = false, error = "Error: Usuario no autenticado.") }
+                return@launch
+            }
+
             try {
-                _uiState.value = _uiState.value.copy(isLoading = true)
+                val profileUpdates = UserProfileChangeRequest.Builder().setDisplayName(newName).build()
+                user.updateProfile(profileUpdates).await()
 
-                val currentUser = auth.currentUser
-                if (currentUser == null) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Usuario no autenticado"
-                    )
-                    return@launch
-                }
+                firestore.collection("users").document(user.uid).update("name", newName).await()
 
-                // Información del usuario desde Firebase Auth
-                val userName = currentUser.displayName ?: "Usuario"
-                val userEmail = currentUser.email ?: ""
-                val memberSince = formatCreationDate(currentUser.metadata?.creationTimestamp ?: 0)
-                val photoUrl = currentUser.photoUrl?.toString()
-
-                // Estadísticas desde Room Database
-                val stats = repository.getStatistics(currentUser.uid)
-                val totalDocuments = stats.totalDocuments
-                val totalStorageMB = stats.totalStorageBytes / (1024.0 * 1024.0)
-
-                // Calcular total de accesos
-                var totalAccesses = 0
-                repository.getUserDocuments(currentUser.uid).collect { documents ->
-                    totalAccesses = documents.sumOf { it.accessCount }
-
-                    _uiState.value = ProfileUiState(
-                        isLoading = false,
-                        error = null,
-                        userName = userName,
-                        userEmail = userEmail,
-                        userPhone = "", // Firebase Auth no guarda teléfono por defecto
-                        memberSince = memberSince,
-                        photoUrl = photoUrl,
-                        totalDocuments = totalDocuments,
-                        totalStorageMB = totalStorageMB,
-                        totalAccesses = totalAccesses
-                    )
-                }
+                _uiState.update { it.copy(isLoading = false, isSaveSuccess = true, userName = newName) }
 
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Error al cargar perfil"
-                )
+                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Ocurrió un error al actualizar el perfil.") }
             }
         }
     }
 
-    private fun formatCreationDate(timestamp: Long): String {
-        if (timestamp == 0L) return "Fecha desconocida"
+    fun changePassword(oldPass: String, newPass: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null, isSaveSuccess = false) }
+            val user = auth.currentUser ?: run {
+                _uiState.update { it.copy(isLoading = false, error = "Error: Usuario no autenticado.") }
+                return@launch
+            }
 
-        val sdf = SimpleDateFormat("MMMM yyyy", Locale("es", "ES"))
-        return sdf.format(Date(timestamp))
-    }
+            try {
+                // 1. Re-autenticar al usuario
+                val credential = EmailAuthProvider.getCredential(user.email!!, oldPass)
+                user.reauthenticate(credential).await()
 
-    fun refreshProfile() {
-        loadProfileData()
+                // 2. Cambiar la contraseña
+                user.updatePassword(newPass).await()
+
+                _uiState.update { it.copy(isLoading = false, isSaveSuccess = true) }
+
+            } catch (e: Exception) {
+                // Manejar errores comunes
+                val errorMessage = when (e) {
+                    is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> "La contraseña actual es incorrecta."
+                    else -> e.message ?: "Ocurrió un error al cambiar la contraseña."
+                }
+                _uiState.update { it.copy(isLoading = false, error = errorMessage) }
+            }
+        }
     }
 }

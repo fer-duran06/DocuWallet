@@ -21,6 +21,9 @@ interface DocumentDao {
 
     @Query("SELECT * FROM documents WHERE isSynced = 0")
     suspend fun getUnsyncedDocuments(): List<DocumentEntity>
+    
+    @Query("SELECT * FROM documents WHERE userId = :userId AND expiryDate IS NOT NULL AND expiryDate <= :expiryLimit")
+    suspend fun getDocumentsExpiringSoon(userId: String, expiryLimit: Long): List<DocumentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDocument(document: DocumentEntity)

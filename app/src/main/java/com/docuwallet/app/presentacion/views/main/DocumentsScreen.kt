@@ -1,10 +1,12 @@
 package com.docuwallet.app.presentacion.views.main
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,11 +18,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.docuwallet.app.data.local.entity.DocumentEntity
+import com.docuwallet.app.presentacion.viewmodels.DocumentsUiState
 import com.docuwallet.app.presentacion.viewmodels.DocumentsViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DocumentsScreen(
     onNavigateToNewDocument: () -> Unit,
@@ -28,139 +31,256 @@ fun DocumentsScreen(
     viewModel: DocumentsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-
-    val categories = listOf(
-        "Todos" to "📁",
-        "Favoritos" to "⭐",
-        "Identificación" to "🪪",
-        "Salud" to "🏥",
-        "Viajes" to "✈️",
-        "Educación" to "🎓",
-        "Trabajo" to "💼",
-        "Personal" to "📄"
-    )
+    val hasSelection = uiState.selectedDocuments.isNotEmpty()
+    var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
+    var pendingDeleteAction by remember { mutableStateOf<() -> Unit>({}) }
 
     Scaffold(
+        topBar = {
+            if (hasSelection) {
+                SelectionTopAppBar(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    onDeleteRequest = {
+                        pendingDeleteAction = { viewModel.deleteSelectedDocuments() }
+                        showDeleteConfirmationDialog = true
+                    }
+                )
+            }
+        },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onNavigateToNewDocument,
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, "Agregar documento")
+            if (!hasSelection) {
+                FloatingActionButton(
+                    onClick = onNavigateToNewDocument,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, "Agregar documento")
+                }
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "Mis Documentos",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            if (!hasSelection) {
+                NormalModeContent(uiState, viewModel)
+            }
+            MainContent(
+                uiState = uiState,
+                onToggleSelection = { viewModel.toggleDocumentSelection(it) },
+                onNavigateToDetail = onNavigateToDocumentDetail,
+                onFavoriteClick = { id, isFav -> viewModel.toggleFavorite(id, isFav) },
+                onDeleteClick = { documentId ->
+                    pendingDeleteAction = { viewModel.deleteDocument(documentId) }
+                    showDeleteConfirmationDialog = true
+                }
             )
+        }
+    }
 
-            Spacer(modifier = Modifier.height(16.dp))
+    if (showDeleteConfirmationDialog) {
+        DeleteConfirmationDialog(
+            count = if (hasSelection) uiState.selectedDocuments.size else 1,
+            onConfirm = {
+                pendingDeleteAction()
+                showDeleteConfirmationDialog = false
+            },
+            onDismiss = { showDeleteConfirmationDialog = false }
+        )
+    }
 
-            // Filtros de categorías
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(categories) { (category, emoji) ->
-                    FilterChip(
-                        selected = uiState.selectedCategory == category,
-                        onClick = { viewModel.loadDocuments(category) },
-                        label = { Text("$emoji $category") }
+    if (uiState.showShareDialog) {
+        ShareDialog(
+            onDismiss = { viewModel.onShareDialogDismiss() },
+            onConfirm = { email -> viewModel.shareSelectedDocumentsWithEmail(email) }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SelectionTopAppBar(
+    uiState: DocumentsUiState,
+    viewModel: DocumentsViewModel,
+    onDeleteRequest: () -> Unit
+) {
+    val selectedCount = uiState.selectedDocuments.size
+    val allSelected = selectedCount > 0 && selectedCount == uiState.documents.size
+    var showShareMenu by remember { mutableStateOf(false) }
+
+    TopAppBar(
+        title = { Text("$selectedCount Seleccionados") },
+        navigationIcon = {
+            IconButton(onClick = { viewModel.clearSelection() }) {
+                Icon(Icons.Default.Close, contentDescription = "Limpiar selección")
+            }
+        },
+        actions = {
+            IconButton(onClick = { viewModel.toggleFavoriteForSelected() }) {
+                Icon(Icons.Default.Star, "Favorito")
+            }
+
+            // Botón de compartir con menú desplegable
+            Box {
+                IconButton(onClick = { showShareMenu = true }) {
+                    Icon(Icons.Default.Share, "Compartir")
+                }
+                DropdownMenu(
+                    expanded = showShareMenu,
+                    onDismissRequest = { showShareMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Compartir con usuario") },
+                        onClick = {
+                            showShareMenu = false
+                            viewModel.onShareRequest()
+                        },
+                        leadingIcon = { Icon(Icons.Default.PersonAdd, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Compartir enlace (WhatsApp, etc.)") },
+                        onClick = {
+                            showShareMenu = false
+                            viewModel.shareSelectedDocumentsAsPublicLink()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Link, null) }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            IconButton(onClick = onDeleteRequest) {
+                Icon(Icons.Default.Delete, "Eliminar")
+            }
+            IconButton(onClick = { 
+                if (allSelected) viewModel.clearSelection() else viewModel.selectAllDocuments()
+            }) {
+                Icon(
+                    if (allSelected) Icons.Default.CheckBox else Icons.Default.SelectAll,
+                    contentDescription = if (allSelected) "Deseleccionar todo" else "Seleccionar todo"
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    )
+}
 
-            // Contenido
-            when {
-                uiState.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NormalModeContent(uiState: DocumentsUiState, viewModel: DocumentsViewModel) {
+    val categories = listOf("Todos", "Favoritos", "Identificación", "Salud", "Viajes", "Educación", "Trabajo", "Personal")
+    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+        Text("Mis Documentos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = uiState.searchQuery,
+            onValueChange = { viewModel.onSearchQueryChanged(it) },
+            placeholder = { Text("Buscar por nombre o categoría...") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(25.dp),
+            leadingIcon = { Icon(Icons.Filled.Search, "Buscar") },
+            singleLine = true
+        )
+        Spacer(Modifier.height(16.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(categories) { category ->
+                FilterChip(
+                    selected = uiState.selectedCategory == category,
+                    onClick = { viewModel.selectCategory(category) },
+                    label = { Text(category) }
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+fun MainContent(
+    uiState: DocumentsUiState,
+    onToggleSelection: (String) -> Unit,
+    onNavigateToDetail: (String) -> Unit,
+    onFavoriteClick: (String, Boolean) -> Unit,
+    onDeleteClick: (String) -> Unit
+) {
+    when {
+        uiState.isLoading -> {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        }
+        uiState.error != null -> {
+            Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
+            }
+        }
+        uiState.documents.isEmpty() && !uiState.isLoading -> {
+            Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text("No se encontraron documentos.")
+            }
+        }
+        else -> {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(uiState.documents, key = { it.id }) { document ->
+                    val isSelected = uiState.selectedDocuments.contains(document.id)
+                    DocumentCard(
+                        document = document,
+                        isSelected = isSelected,
+                        hasSelection = uiState.selectedDocuments.isNotEmpty(),
+                        onToggleSelection = { onToggleSelection(document.id) },
+                        onNavigateToDetail = { onNavigateToDetail(document.id) },
+                        onFavoriteClick = { onFavoriteClick(document.id, document.isFavorite) },
+                        onDeleteClick = { onDeleteClick(document.id) }
+                    )
                 }
+            }
+        }
+    }
+}
 
-                uiState.error != null -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                Icons.Default.Error,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = uiState.error ?: "Error desconocido",
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun DocumentCard(
+    document: DocumentEntity,
+    isSelected: Boolean,
+    hasSelection: Boolean,
+    onToggleSelection: () -> Unit,
+    onNavigateToDetail: () -> Unit,
+    onFavoriteClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = { if (hasSelection) onToggleSelection() else onNavigateToDetail() },
+            onLongClick = onToggleSelection
+        ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (hasSelection) {
+                Checkbox(checked = isSelected, onCheckedChange = { onToggleSelection() }, modifier = Modifier.padding(end = 12.dp))
+            }
+            Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(document.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(document.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Spacer(Modifier.height(8.dp))
+                Text("Creado: ${formatDate(document.createdAt)}", style = MaterialTheme.typography.bodySmall)
+            }
+            if (!hasSelection) {
+                Row {
+                    IconButton(onClick = onFavoriteClick) {
+                        Icon(
+                            if (document.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            "Favorito",
+                            tint = if (document.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface
+                        )
                     }
-                }
-
-                uiState.documents.isEmpty() -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "No hay documentos",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Escanea tu primer documento para comenzar",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                            )
-                        }
-                    }
-                }
-
-                else -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(uiState.documents) { document ->
-                            DocumentCard(
-                                document = document,
-                                onFavoriteClick = {
-                                    viewModel.toggleFavorite(document.id, document.isFavorite)
-                                },
-                                onDeleteClick = {
-                                    viewModel.deleteDocument(document.id)
-                                },
-                                onClick = {
-                                    onNavigateToDocumentDetail(document.id)
-                                }
-                            )
-                        }
+                    IconButton(onClick = onDeleteClick) {
+                        Icon(Icons.Default.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -169,145 +289,47 @@ fun DocumentsScreen(
 }
 
 @Composable
-fun DocumentCard(
-    document: DocumentEntity,
-    onFavoriteClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onClick: () -> Unit = {}
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        Icons.Default.InsertDriveFile,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = document.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = document.category,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-
-                Row {
-                    IconButton(onClick = onFavoriteClick) {
-                        Icon(
-                            if (document.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = "Favorito",
-                            tint = if (document.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    IconButton(onClick = onDeleteClick) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Eliminar",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
+fun DeleteConfirmationDialog(count: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val text = if (count > 1) "¿Estás seguro de que quieres eliminar los $count documentos seleccionados?" else "¿Estás seguro de que quieres eliminar este documento?"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Confirmar Eliminación") },
+        text = { Text(text) },
+        confirmButton = {
+            Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                Text("Eliminar")
             }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (document.notes.isNotBlank()) {
-                Text(
-                    text = document.notes,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ShareDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var email by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Compartir Documento") },
+        text = {
+            Column {
+                Text("Introduce el email del usuario con quien quieres compartir.")
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email del destinatario") },
+                    singleLine = true
                 )
-                Spacer(modifier = Modifier.height(8.dp))
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Tamaño",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "${document.fileSize / 1024} KB",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = "Páginas",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "${document.pageCount}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = "Creado",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = formatDate(document.createdAt),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                if (!document.isSynced) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Default.CloudOff,
-                            contentDescription = "No sincronizado",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = "Local",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(email) }, enabled = email.isNotBlank() && "@" in email) {
+                Text("Compartir")
             }
-        }
-    }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
 }
 
 private fun formatDate(timestamp: Long): String {

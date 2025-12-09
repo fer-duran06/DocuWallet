@@ -8,6 +8,8 @@ object Routes {
     const val DOCUMENTS = "documents"
     const val STATS = "stats"
     const val PROFILE = "profile"
+    const val EDIT_PROFILE = "edit_profile"
+    const val CHANGE_PASSWORD = "change_password"
     const val NEW_DOCUMENT = "new_document"
     const val CAMERA_SCAN = "camera_scan"
     const val PAGE_PREVIEW = "page_preview"

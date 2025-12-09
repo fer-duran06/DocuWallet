@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.docuwallet.app.DocuWalletApplication
 import com.docuwallet.app.data.repository.DocumentRepository
 import com.docuwallet.app.utils.PdfUtils
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,7 +16,22 @@ import java.io.File
 
 class DocumentUploadViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = DocumentRepository(application.applicationContext)
+    // Se obtiene el repositorio singleton desde la clase Application.
+    private val repository: DocumentRepository = (application as DocuWalletApplication).repository
+
+    data class PdfGenerationState(
+        val isLoading: Boolean = false,
+        val isSuccess: Boolean = false,
+        val pdfFile: File? = null,
+        val error: String? = null
+    )
+
+    data class DocumentSaveState(
+        val isLoading: Boolean = false,
+        val isSuccess: Boolean = false,
+        val documentId: String? = null,
+        val error: String? = null
+    )
 
     private val _pdfState = MutableStateFlow(PdfGenerationState())
     val pdfState: StateFlow<PdfGenerationState> = _pdfState.asStateFlow()
@@ -58,7 +74,6 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    // Función wrapper para compatibilidad
     fun saveDocument(
         context: Context,
         imageUris: List<Uri>,
@@ -70,7 +85,6 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
         saveDocumentWithExpiry(context, imageUris, name, category, notes, pageCount, null)
     }
 
-    // ✨ FUNCIÓN CORREGIDA: Pasa el Long directamente
     fun saveDocumentWithExpiry(
         context: Context,
         imageUris: List<Uri>,
@@ -84,14 +98,13 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
             try {
                 _saveState.value = DocumentSaveState(isLoading = true)
 
-                // NO convertimos a String aquí. Enviamos el Long (timestamp) al repositorio.
                 val result = repository.saveDocumentWithExpiry(
                     imageUris = imageUris,
                     name = name,
                     category = category,
                     notes = notes,
                     pageCount = pageCount,
-                    expiryDate = expiryDate // <--- Pasamos el Long directo
+                    expiryDate = expiryDate
                 )
 
                 if (result.isSuccess) {
