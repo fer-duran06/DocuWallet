@@ -1,15 +1,40 @@
 package com.docuwallet.app.presentacion.views.main
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,8 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
-import com.docuwallet.app.presentacion.viewmodels.ProfileViewModel
+import com.docuwallet.app.presentacion.viewmodels.DocumentsViewModel
 import com.docuwallet.app.presentacion.viewmodels.ProfileUiState
+import com.docuwallet.app.presentacion.viewmodels.ProfileViewModel
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,11 +54,15 @@ fun ProfileScreen(
     viewModel: AuthViewModel,
     onLogout: () -> Unit,
     onNavigateToFileManager: () -> Unit,
-    onNavigateToEditProfile: () -> Unit, 
+    onNavigateToEditProfile: () -> Unit,
     onNavigateToChangePassword: () -> Unit // <-- AGREGADO
 ) {
     val profileViewModel: ProfileViewModel = viewModel()
     val profileState by profileViewModel.uiState.collectAsState()
+
+    // ViewModel para los documentos
+    val documentsViewModel: DocumentsViewModel = viewModel()
+    val documentsState by documentsViewModel.uiState.collectAsState()
 
     // Lanzar efecto para cargar el perfil una sola vez
     LaunchedEffect(Unit) {
@@ -59,9 +90,15 @@ fun ProfileScreen(
                     Text(text = profileState.error!!, color = MaterialTheme.colorScheme.error)
                 }
             } else {
+                // Calcular estadísticas de documentos
+                val documentCount = documentsState.documents.size
+                val totalSize = documentsState.documents.sumOf { it.fileSize }
+                val totalSizeMb = String.format(Locale.US, "%.2f", totalSize / (1024.0 * 1024.0))
+                val totalAccessCount = documentsState.documents.sumOf { it.accessCount }
+
                 // Contenido del perfil
                 ProfileHeader(profileState)
-                ProfileStats(profileState)
+                ProfileStats(documentCount, totalSizeMb, totalAccessCount)
                 Divider()
                 ProfileInfoSection(profileState)
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
@@ -110,16 +147,14 @@ fun ProfileHeader(profileState: ProfileUiState) {
 }
 
 @Composable
-fun ProfileStats(profileState: ProfileUiState) {
-    // Esta sección puede ser implementada en el futuro
-    // Por ahora, usamos datos de ejemplo.
+fun ProfileStats(documentCount: Int, sizeUsedMb: String, accessCount: Int) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(24.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        ProfileStatCard("0", "Documentos")
-        ProfileStatCard("0", "MB usados")
-        ProfileStatCard("0", "Accesos")
+        ProfileStatCard(documentCount.toString(), "Documentos")
+        ProfileStatCard(sizeUsedMb, "MB usados")
+        ProfileStatCard(accessCount.toString(), "Accesos")
     }
 }
 
