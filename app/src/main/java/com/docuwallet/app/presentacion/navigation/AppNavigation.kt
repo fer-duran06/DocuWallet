@@ -32,11 +32,14 @@ import com.docuwallet.app.data.local.entity.DocumentEntity
 import com.docuwallet.app.data.repository.DocumentRepository
 import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
 import com.docuwallet.app.presentacion.viewmodels.DocumentUploadViewModel
+import com.docuwallet.app.presentacion.viewmodels.ProfileViewModel
 import com.docuwallet.app.presentacion.views.SplashScreen
 import com.docuwallet.app.presentacion.views.auth.LoginScreen
 import com.docuwallet.app.presentacion.views.auth.RegisterScreen
 import com.docuwallet.app.presentacion.views.main.CameraScanScreen
+import com.docuwallet.app.presentacion.views.main.ChangePasswordScreen
 import com.docuwallet.app.presentacion.views.main.DocumentDetailScreen
+import com.docuwallet.app.presentacion.views.main.EditProfileScreen
 import com.docuwallet.app.presentacion.views.main.FileManagerScreen
 import com.docuwallet.app.presentacion.views.main.MainScreen
 import com.docuwallet.app.presentacion.views.main.NewDocumentScreen
@@ -107,8 +110,14 @@ fun AppNavigation(
                 onNavigateToFileManager = {
                     navController.navigate(Routes.FILE_MANAGER)
                 },
-                onNavigateToDocumentDetail = { documentId ->  // ← AGREGAR ESTE CALLBACK
+                onNavigateToDocumentDetail = { documentId ->
                     navController.navigate(Routes.documentDetail(documentId))
+                },
+                onNavigateToEditProfile = { 
+                    navController.navigate(Routes.EDIT_PROFILE)
+                },
+                onNavigateToChangePassword = {
+                    navController.navigate(Routes.CHANGE_PASSWORD)
                 },
                 onLogout = {
                     authViewModel.logout()
@@ -117,6 +126,50 @@ fun AppNavigation(
                     }
                 }
             )
+        }
+
+        composable(Routes.EDIT_PROFILE) {
+            val profileViewModel: ProfileViewModel = viewModel()
+            val uiState by profileViewModel.uiState.collectAsState()
+
+            EditProfileScreen(
+                currentName = uiState.userName,
+                currentEmail = uiState.userEmail,
+                onNavigateBack = { navController.popBackStack() },
+                onSave = { newName ->
+                    profileViewModel.updateUserName(newName)
+                },
+                isLoading = uiState.isLoading,
+                error = uiState.error
+            )
+
+            // Navegar hacia atrás si el guardado fue exitoso
+            LaunchedEffect(uiState.isSaveSuccess) {
+                if (uiState.isSaveSuccess) {
+                    navController.popBackStack()
+                }
+            }
+        }
+
+        composable(Routes.CHANGE_PASSWORD) {
+            val profileViewModel: ProfileViewModel = viewModel()
+            val uiState by profileViewModel.uiState.collectAsState()
+
+            ChangePasswordScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onSave = { oldPass, newPass ->
+                    profileViewModel.changePassword(oldPass, newPass)
+                },
+                isLoading = uiState.isLoading,
+                error = uiState.error
+            )
+
+            // Navegar hacia atrás si el guardado fue exitoso
+            LaunchedEffect(uiState.isSaveSuccess) {
+                if (uiState.isSaveSuccess) {
+                    navController.popBackStack()
+                }
+            }
         }
 
         // File Manager Screen

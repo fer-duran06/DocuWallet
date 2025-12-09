@@ -18,7 +18,9 @@ fun MainScreen(
     authViewModel: AuthViewModel,
     onNavigateToNewDocument: () -> Unit,
     onNavigateToFileManager: () -> Unit,
-    onNavigateToDocumentDetail: (String) -> Unit,  // ← AGREGAR ESTE PARÁMETRO
+    onNavigateToDocumentDetail: (String) -> Unit,
+    onNavigateToEditProfile: () -> Unit,
+    onNavigateToChangePassword: () -> Unit, // <-- AGREGADO
     onLogout: () -> Unit
 ) {
     val navController = rememberNavController()
@@ -49,7 +51,7 @@ fun MainScreen(
             composable(Routes.DOCUMENTS) {
                 DocumentsScreen(
                     onNavigateToNewDocument = onNavigateToNewDocument,
-                    onNavigateToDocumentDetail = onNavigateToDocumentDetail  // ← PASAR EL CALLBACK
+                    onNavigateToDocumentDetail = onNavigateToDocumentDetail
                 )
             }
 
@@ -61,7 +63,9 @@ fun MainScreen(
                 ProfileScreen(
                     viewModel = authViewModel,
                     onLogout = onLogout,
-                    onNavigateToFileManager = onNavigateToFileManager
+                    onNavigateToFileManager = onNavigateToFileManager,
+                    onNavigateToEditProfile = onNavigateToEditProfile,
+                    onNavigateToChangePassword = onNavigateToChangePassword // <-- AGREGADO
                 )
             }
         }
