@@ -17,9 +17,9 @@ class FileManagerViewModelFactory(private val context: Context) : ViewModelProvi
             // 2. Se crea el Repositorio con el DAO y el Context.
             val repository = DocumentRepository(dao, context.applicationContext)
 
-            // 3. Se crea el ViewModel con el Repositorio.
+            // 3. Se crea el ViewModel con el Repositorio y el Context.
             @Suppress("UNCHECKED_CAST")
-            return FileManagerViewModel(repository) as T
+            return FileManagerViewModel(repository, context.applicationContext) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

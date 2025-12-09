@@ -1,10 +1,12 @@
 package com.docuwallet.app.presentacion.views.main
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,11 +18,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.docuwallet.app.data.local.entity.DocumentEntity
+import com.docuwallet.app.presentacion.viewmodels.DocumentsUiState
 import com.docuwallet.app.presentacion.viewmodels.DocumentsViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DocumentsScreen(
     onNavigateToNewDocument: () -> Unit,
@@ -28,193 +31,278 @@ fun DocumentsScreen(
     viewModel: DocumentsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val hasSelection = uiState.selectedDocuments.isNotEmpty()
+    var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
+    var pendingDeleteAction by remember { mutableStateOf<() -> Unit>({}) }
 
     val categories = listOf(
-        "Todos" to "📁",
-        "Favoritos" to "⭐",
-        "Identificación" to "🪪",
-        "Salud" to "🏥",
-        "Viajes" to "✈️",
-        "Educación" to "🎓",
-        "Trabajo" to "💼",
-        "Personal" to "📄"
+        "Todos", "Favoritos", "Identificación", "Salud", "Viajes", "Educación", "Trabajo", "Personal"
     )
 
     Scaffold(
+        topBar = {
+            if (hasSelection) {
+                val allSelected = uiState.documents.isNotEmpty() && uiState.selectedDocuments.size == uiState.documents.size
+                SelectionTopAppBar(
+                    selectedCount = uiState.selectedDocuments.size,
+                    isAllSelected = allSelected,
+                    onCloseSelection = { viewModel.clearSelection() },
+                    onToggleFavorite = { viewModel.toggleFavoriteForSelected() },
+                    onShare = { viewModel.shareSelectedDocuments() },
+                    onDelete = {
+                        pendingDeleteAction = { viewModel.deleteSelectedDocuments() }
+                        showDeleteConfirmationDialog = true
+                    },
+                    onSelectAll = {
+                        if (allSelected) viewModel.clearSelection() else viewModel.selectAllDocuments()
+                    }
+                )
+            }
+        },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onNavigateToNewDocument,
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, "Agregar documento")
+            if (!hasSelection) {
+                FloatingActionButton(
+                    onClick = onNavigateToNewDocument,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, "Agregar documento")
+                }
             }
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
+                .padding(paddingValues) // Padding del Scaffold
         ) {
-            Text(
-                text = "Mis Documentos",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+            if (!hasSelection) {
+                NormalModeContent(uiState = uiState, viewModel = viewModel, categories = categories)
+            }
+            MainContent(
+                uiState = uiState,
+                hasSelection = hasSelection,
+                onToggleSelection = { viewModel.toggleDocumentSelection(it) },
+                onNavigateToDocumentDetail = onNavigateToDocumentDetail,
+                onFavoriteClick = { id, isFav -> viewModel.toggleFavorite(id, isFav) },
+                onDeleteClick = { documentId ->
+                    pendingDeleteAction = { viewModel.deleteDocument(documentId) }
+                    showDeleteConfirmationDialog = true
+                }
             )
+        }
+    }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Filtros de categorías
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(categories) { (category, emoji) ->
-                    FilterChip(
-                        selected = uiState.selectedCategory == category,
-                        onClick = { viewModel.loadDocuments(category) },
-                        label = { Text("$emoji $category") }
-                    )
+    if (showDeleteConfirmationDialog) {
+        val text = if (hasSelection && uiState.selectedDocuments.isNotEmpty()) {
+            val count = uiState.selectedDocuments.size
+            if (count > 1) "¿Estás seguro de que quieres eliminar los $count documentos seleccionados?"
+            else "¿Estás seguro de que quieres eliminar el documento seleccionado?"
+        } else {
+            "¿Estás seguro de que quieres eliminar este documento?"
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmationDialog = false },
+            title = { Text("Confirmar Eliminación") },
+            text = { Text(text) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingDeleteAction()
+                        showDeleteConfirmationDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Eliminar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmationDialog = false }) {
+                    Text("Cancelar")
                 }
             }
+        )
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NormalModeContent(
+    uiState: DocumentsUiState,
+    viewModel: DocumentsViewModel,
+    categories: List<String>
+) {
+    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+        Text(
+            text = "Mis Documentos",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = uiState.searchQuery,
+            onValueChange = { viewModel.onSearchQueryChanged(it) },
+            placeholder = { Text("Buscar por nombre o categoría...") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(25.dp),
+            leadingIcon = { Icon(Icons.Filled.Search, "Buscar") },
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(categories) { category ->
+                FilterChip(
+                    selected = uiState.selectedCategory == category,
+                    onClick = { viewModel.selectCategory(category) },
+                    label = { Text(category) }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
 
-            // Contenido
-            when {
-                uiState.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-
-                uiState.error != null -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                Icons.Default.Error,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = uiState.error ?: "Error desconocido",
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-
-                uiState.documents.isEmpty() -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "No hay documentos",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Escanea tu primer documento para comenzar",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                            )
-                        }
-                    }
-                }
-
-                else -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(uiState.documents) { document ->
-                            DocumentCard(
-                                document = document,
-                                onFavoriteClick = {
-                                    viewModel.toggleFavorite(document.id, document.isFavorite)
-                                },
-                                onDeleteClick = {
-                                    viewModel.deleteDocument(document.id)
-                                },
-                                onClick = {
-                                    onNavigateToDocumentDetail(document.id)
-                                }
-                            )
-                        }
-                    }
+@Composable
+private fun MainContent(
+    uiState: DocumentsUiState,
+    hasSelection: Boolean,
+    onToggleSelection: (String) -> Unit,
+    onNavigateToDocumentDetail: (String) -> Unit,
+    onFavoriteClick: (String, Boolean) -> Unit,
+    onDeleteClick: (String) -> Unit
+) {
+    when {
+        uiState.isLoading -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        uiState.error != null -> {
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
+            }
+        }
+        uiState.documents.isEmpty() && !uiState.isLoading -> {
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text("No se encontraron documentos.")
+            }
+        }
+        else -> {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(uiState.documents, key = { it.id }) { document ->
+                    val isSelected = uiState.selectedDocuments.contains(document.id)
+                    DocumentCard(
+                        document = document,
+                        isSelected = isSelected,
+                        hasSelection = hasSelection,
+                        onToggleSelection = { onToggleSelection(document.id) },
+                        onNavigateToDetail = { onNavigateToDocumentDetail(document.id) },
+                        onFavoriteClick = { onFavoriteClick(document.id, document.isFavorite) },
+                        onDeleteClick = { onDeleteClick(document.id) }
+                    )
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SelectionTopAppBar(
+    selectedCount: Int,
+    isAllSelected: Boolean,
+    onCloseSelection: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+    onSelectAll: () -> Unit
+) {
+    TopAppBar(
+        title = { Text("$selectedCount Seleccionados") },
+        navigationIcon = {
+            IconButton(onClick = onCloseSelection) {
+                Icon(Icons.Default.Close, contentDescription = "Limpiar selección")
+            }
+        },
+        actions = {
+            IconButton(onClick = onToggleFavorite) {
+                Icon(Icons.Default.Star, "Favorito")
+            }
+            IconButton(onClick = onShare) {
+                Icon(Icons.Default.Share, "Compartir")
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, "Eliminar")
+            }
+            IconButton(onClick = onSelectAll) {
+                Icon(
+                    if (isAllSelected) Icons.Default.CheckBox else Icons.Default.SelectAll,
+                    contentDescription = if (isAllSelected) "Deseleccionar todo" else "Seleccionar todo"
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DocumentCard(
     document: DocumentEntity,
+    isSelected: Boolean,
+    hasSelection: Boolean,
+    onToggleSelection: () -> Unit,
+    onNavigateToDetail: () -> Unit,
     onFavoriteClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onClick: () -> Unit = {}
+    onDeleteClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = {
+                    if (hasSelection) onToggleSelection() else onNavigateToDetail()
+                },
+                onLongClick = onToggleSelection
+            ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+            else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        Icons.Default.InsertDriveFile,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = document.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = document.category,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
+            if (hasSelection) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelection() },
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+            }
 
+            Icon(
+                Icons.Default.InsertDriveFile,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(40.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = document.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(text = document.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "Creado: ${formatDate(document.createdAt)}", style = MaterialTheme.typography.bodySmall)
+            }
+
+            if (!hasSelection) {
                 Row {
                     IconButton(onClick = onFavoriteClick) {
                         Icon(
@@ -223,85 +311,11 @@ fun DocumentCard(
                             tint = if (document.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface
                         )
                     }
-
                     IconButton(onClick = onDeleteClick) {
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = "Eliminar",
                             tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (document.notes.isNotBlank()) {
-                Text(
-                    text = document.notes,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Tamaño",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "${document.fileSize / 1024} KB",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = "Páginas",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "${document.pageCount}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = "Creado",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = formatDate(document.createdAt),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                if (!document.isSynced) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Default.CloudOff,
-                            contentDescription = "No sincronizado",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = "Local",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                 }
