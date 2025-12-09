@@ -9,26 +9,96 @@ import com.docuwallet.app.data.remote.cloudinary.CloudinaryService
 import com.docuwallet.app.data.remote.firebase.FirebaseDocumentService
 import com.docuwallet.app.utils.PdfUtils
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldPath
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.firestore.ktx.toObject
+import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.io.File
 import java.util.UUID
 
-// ✨ CORREGIDO: El repositorio ahora recibe el DAO y el Context, en lugar de crearlos.
+data class SharedDocument(
+    val documentId: String = "",
+    val ownerId: String = "",
+    val sharedWithId: String = "",
+    val sharedAt: Long = System.currentTimeMillis()
+)
+
 class DocumentRepository(
     private val documentDao: DocumentDao,
     private val context: Context
 ) {
 
     private val auth = FirebaseAuth.getInstance()
+    private val firestore = Firebase.firestore
     private val cloudinaryService = CloudinaryService(context)
     private val documentService = FirebaseDocumentService()
     private val TAG = "DocumentRepository"
 
     // --- MÉTODOS DE LECTURA ---
-    fun getUserDocuments(userId: String): Flow<List<DocumentEntity>> = documentDao.getUserDocuments(userId)
+    fun getUserDocuments(userId: String): Flow<List<DocumentEntity>> {
+        val userDocsFlow = documentDao.getUserDocuments(userId)
+        val sharedDocsFlow = getSharedDocumentsForUser(userId)
+
+        return userDocsFlow.combine(sharedDocsFlow) { own, shared ->
+            (own + shared).distinctBy { it.id }.sortedByDescending { it.createdAt }
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun getSharedDocumentsForUser(userId: String): Flow<List<DocumentEntity>> = callbackFlow {
+        val listener = firestore.collection("shared_documents")
+            .whereEqualTo("sharedWithId", userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w(TAG, "Error escuchando documentos compartidos", error)
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot == null || snapshot.isEmpty) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+
+                val docIds = snapshot.documents.mapNotNull { it.getString("documentId") }
+                if (docIds.isEmpty()) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+
+                // Lanzamos una corrutina para buscar los detalles de los documentos
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val allSharedDocuments = mutableListOf<DocumentEntity>()
+                        // Firestore tiene un límite de 30 IDs por consulta 'in'
+                        docIds.chunked(30).forEach { chunk ->
+                            val docsSnapshot = firestore.collection("documents")
+                                .whereIn(FieldPath.documentId(), chunk)
+                                .get()
+                                .await()
+                            allSharedDocuments.addAll(docsSnapshot.toObjects(DocumentEntity::class.java))
+                        }
+                        trySend(allSharedDocuments)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error buscando detalles de docs compartidos", e)
+                        trySend(emptyList())
+                    }
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+
     fun getDocumentsByCategory(userId: String, category: String): Flow<List<DocumentEntity>> = documentDao.getDocumentsByCategory(userId, category)
     fun getFavoriteDocuments(userId: String): Flow<List<DocumentEntity>> = documentDao.getFavoriteDocuments(userId)
 
@@ -37,6 +107,33 @@ class DocumentRepository(
     }
 
     // --- MÉTODOS DE ESCRITURA ---
+
+    suspend fun shareDocumentWithUser(documentId: String, email: String): Result<Unit> {
+        return try {
+            val ownerId = auth.currentUser?.uid ?: return Result.failure(Exception("Usuario no autenticado"))
+            val userQuery = firestore.collection("users").whereEqualTo("email", email).limit(1).get().await()
+            if (userQuery.isEmpty) {
+                return Result.failure(Exception("No se encontró ningún usuario con el email '$email'."))
+            }
+            val sharedWithId = userQuery.documents.first().id
+            if(ownerId == sharedWithId) {
+                return Result.failure(Exception("No puedes compartir un documento contigo mismo."))
+            }
+
+            val sharedDocument = SharedDocument(
+                documentId = documentId,
+                ownerId = ownerId,
+                sharedWithId = sharedWithId
+            )
+            firestore.collection("shared_documents").add(sharedDocument).await()
+            Log.d(TAG, "✅ Documento $documentId compartido con $email (ID: $sharedWithId)")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error al compartir el documento: ${e.message}", e)
+            Result.failure(Exception("Ocurrió un error al compartir. Inténtalo de nuevo.", e))
+        }
+    }
+
     suspend fun incrementAccessCount(documentId: String) {
         try { documentDao.incrementAccessCount(documentId) } catch (e: Exception) { Log.e(TAG, "Error contador", e) }
     }

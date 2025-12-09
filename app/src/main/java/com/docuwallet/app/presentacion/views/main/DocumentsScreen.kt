@@ -35,26 +35,15 @@ fun DocumentsScreen(
     var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
     var pendingDeleteAction by remember { mutableStateOf<() -> Unit>({}) }
 
-    val categories = listOf(
-        "Todos", "Favoritos", "Identificación", "Salud", "Viajes", "Educación", "Trabajo", "Personal"
-    )
-
     Scaffold(
         topBar = {
             if (hasSelection) {
-                val allSelected = uiState.documents.isNotEmpty() && uiState.selectedDocuments.size == uiState.documents.size
                 SelectionTopAppBar(
-                    selectedCount = uiState.selectedDocuments.size,
-                    isAllSelected = allSelected,
-                    onCloseSelection = { viewModel.clearSelection() },
-                    onToggleFavorite = { viewModel.toggleFavoriteForSelected() },
-                    onShare = { viewModel.shareSelectedDocuments() },
-                    onDelete = {
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    onDeleteRequest = {
                         pendingDeleteAction = { viewModel.deleteSelectedDocuments() }
                         showDeleteConfirmationDialog = true
-                    },
-                    onSelectAll = {
-                        if (allSelected) viewModel.clearSelection() else viewModel.selectAllDocuments()
                     }
                 )
             }
@@ -70,19 +59,14 @@ fun DocumentsScreen(
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues) // Padding del Scaffold
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             if (!hasSelection) {
-                NormalModeContent(uiState = uiState, viewModel = viewModel, categories = categories)
+                NormalModeContent(uiState, viewModel)
             }
             MainContent(
                 uiState = uiState,
-                hasSelection = hasSelection,
                 onToggleSelection = { viewModel.toggleDocumentSelection(it) },
-                onNavigateToDocumentDetail = onNavigateToDocumentDetail,
+                onNavigateToDetail = onNavigateToDocumentDetail,
                 onFavoriteClick = { id, isFav -> viewModel.toggleFavorite(id, isFav) },
                 onDeleteClick = { documentId ->
                     pendingDeleteAction = { viewModel.deleteDocument(documentId) }
@@ -93,51 +77,98 @@ fun DocumentsScreen(
     }
 
     if (showDeleteConfirmationDialog) {
-        val text = if (hasSelection && uiState.selectedDocuments.isNotEmpty()) {
-            val count = uiState.selectedDocuments.size
-            if (count > 1) "¿Estás seguro de que quieres eliminar los $count documentos seleccionados?"
-            else "¿Estás seguro de que quieres eliminar el documento seleccionado?"
-        } else {
-            "¿Estás seguro de que quieres eliminar este documento?"
-        }
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmationDialog = false },
-            title = { Text("Confirmar Eliminación") },
-            text = { Text(text) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        pendingDeleteAction()
-                        showDeleteConfirmationDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Eliminar")
-                }
+        DeleteConfirmationDialog(
+            count = if (hasSelection) uiState.selectedDocuments.size else 1,
+            onConfirm = {
+                pendingDeleteAction()
+                showDeleteConfirmationDialog = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmationDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
+            onDismiss = { showDeleteConfirmationDialog = false }
+        )
+    }
+
+    if (uiState.showShareDialog) {
+        ShareDialog(
+            onDismiss = { viewModel.onShareDialogDismiss() },
+            onConfirm = { email -> viewModel.shareSelectedDocumentsWithEmail(email) }
         )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NormalModeContent(
+fun SelectionTopAppBar(
     uiState: DocumentsUiState,
     viewModel: DocumentsViewModel,
-    categories: List<String>
+    onDeleteRequest: () -> Unit
 ) {
+    val selectedCount = uiState.selectedDocuments.size
+    val allSelected = selectedCount > 0 && selectedCount == uiState.documents.size
+    var showShareMenu by remember { mutableStateOf(false) }
+
+    TopAppBar(
+        title = { Text("$selectedCount Seleccionados") },
+        navigationIcon = {
+            IconButton(onClick = { viewModel.clearSelection() }) {
+                Icon(Icons.Default.Close, contentDescription = "Limpiar selección")
+            }
+        },
+        actions = {
+            IconButton(onClick = { viewModel.toggleFavoriteForSelected() }) {
+                Icon(Icons.Default.Star, "Favorito")
+            }
+
+            // Botón de compartir con menú desplegable
+            Box {
+                IconButton(onClick = { showShareMenu = true }) {
+                    Icon(Icons.Default.Share, "Compartir")
+                }
+                DropdownMenu(
+                    expanded = showShareMenu,
+                    onDismissRequest = { showShareMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Compartir con usuario") },
+                        onClick = {
+                            showShareMenu = false
+                            viewModel.onShareRequest()
+                        },
+                        leadingIcon = { Icon(Icons.Default.PersonAdd, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Compartir enlace (WhatsApp, etc.)") },
+                        onClick = {
+                            showShareMenu = false
+                            viewModel.shareSelectedDocumentsAsPublicLink()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Link, null) }
+                    )
+                }
+            }
+
+            IconButton(onClick = onDeleteRequest) {
+                Icon(Icons.Default.Delete, "Eliminar")
+            }
+            IconButton(onClick = { 
+                if (allSelected) viewModel.clearSelection() else viewModel.selectAllDocuments()
+            }) {
+                Icon(
+                    if (allSelected) Icons.Default.CheckBox else Icons.Default.SelectAll,
+                    contentDescription = if (allSelected) "Deseleccionar todo" else "Seleccionar todo"
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NormalModeContent(uiState: DocumentsUiState, viewModel: DocumentsViewModel) {
+    val categories = listOf("Todos", "Favoritos", "Identificación", "Salud", "Viajes", "Educación", "Trabajo", "Personal")
     Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
-        Text(
-            text = "Mis Documentos",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(16.dp))
+        Text("Mis Documentos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = uiState.searchQuery,
             onValueChange = { viewModel.onSearchQueryChanged(it) },
@@ -147,7 +178,7 @@ private fun NormalModeContent(
             leadingIcon = { Icon(Icons.Filled.Search, "Buscar") },
             singleLine = true
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(categories) { category ->
                 FilterChip(
@@ -157,32 +188,29 @@ private fun NormalModeContent(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun MainContent(
+fun MainContent(
     uiState: DocumentsUiState,
-    hasSelection: Boolean,
     onToggleSelection: (String) -> Unit,
-    onNavigateToDocumentDetail: (String) -> Unit,
+    onNavigateToDetail: (String) -> Unit,
     onFavoriteClick: (String, Boolean) -> Unit,
     onDeleteClick: (String) -> Unit
 ) {
     when {
         uiState.isLoading -> {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         }
         uiState.error != null -> {
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                 Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
             }
         }
         uiState.documents.isEmpty() && !uiState.isLoading -> {
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                 Text("No se encontraron documentos.")
             }
         }
@@ -196,9 +224,9 @@ private fun MainContent(
                     DocumentCard(
                         document = document,
                         isSelected = isSelected,
-                        hasSelection = hasSelection,
+                        hasSelection = uiState.selectedDocuments.isNotEmpty(),
                         onToggleSelection = { onToggleSelection(document.id) },
-                        onNavigateToDetail = { onNavigateToDocumentDetail(document.id) },
+                        onNavigateToDetail = { onNavigateToDetail(document.id) },
                         onFavoriteClick = { onFavoriteClick(document.id, document.isFavorite) },
                         onDeleteClick = { onDeleteClick(document.id) }
                     )
@@ -206,45 +234,6 @@ private fun MainContent(
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SelectionTopAppBar(
-    selectedCount: Int,
-    isAllSelected: Boolean,
-    onCloseSelection: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit,
-    onSelectAll: () -> Unit
-) {
-    TopAppBar(
-        title = { Text("$selectedCount Seleccionados") },
-        navigationIcon = {
-            IconButton(onClick = onCloseSelection) {
-                Icon(Icons.Default.Close, contentDescription = "Limpiar selección")
-            }
-        },
-        actions = {
-            IconButton(onClick = onToggleFavorite) {
-                Icon(Icons.Default.Star, "Favorito")
-            }
-            IconButton(onClick = onShare) {
-                Icon(Icons.Default.Share, "Compartir")
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, "Eliminar")
-            }
-            IconButton(onClick = onSelectAll) {
-                Icon(
-                    if (isAllSelected) Icons.Default.CheckBox else Icons.Default.SelectAll,
-                    contentDescription = if (isAllSelected) "Deseleccionar todo" else "Seleccionar todo"
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -259,69 +248,88 @@ fun DocumentCard(
     onDeleteClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = {
-                    if (hasSelection) onToggleSelection() else onNavigateToDetail()
-                },
-                onLongClick = onToggleSelection
-            ),
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = { if (hasSelection) onToggleSelection() else onNavigateToDetail() },
+            onLongClick = onToggleSelection
+        ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-            else MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             if (hasSelection) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = { onToggleSelection() },
-                    modifier = Modifier.padding(end = 12.dp)
-                )
+                Checkbox(checked = isSelected, onCheckedChange = { onToggleSelection() }, modifier = Modifier.padding(end = 12.dp))
             }
-
-            Icon(
-                Icons.Default.InsertDriveFile,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(40.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = document.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(text = document.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "Creado: ${formatDate(document.createdAt)}", style = MaterialTheme.typography.bodySmall)
+            Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(document.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(document.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Spacer(Modifier.height(8.dp))
+                Text("Creado: ${formatDate(document.createdAt)}", style = MaterialTheme.typography.bodySmall)
             }
-
             if (!hasSelection) {
                 Row {
                     IconButton(onClick = onFavoriteClick) {
                         Icon(
                             if (document.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = "Favorito",
+                            "Favorito",
                             tint = if (document.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface
                         )
                     }
                     IconButton(onClick = onDeleteClick) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Eliminar",
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                        Icon(Icons.Default.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+fun DeleteConfirmationDialog(count: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val text = if (count > 1) "¿Estás seguro de que quieres eliminar los $count documentos seleccionados?" else "¿Estás seguro de que quieres eliminar este documento?"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Confirmar Eliminación") },
+        text = { Text(text) },
+        confirmButton = {
+            Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                Text("Eliminar")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ShareDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var email by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Compartir Documento") },
+        text = {
+            Column {
+                Text("Introduce el email del usuario con quien quieres compartir.")
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email del destinatario") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(email) }, enabled = email.isNotBlank() && "@" in email) {
+                Text("Compartir")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
 }
 
 private fun formatDate(timestamp: Long): String {

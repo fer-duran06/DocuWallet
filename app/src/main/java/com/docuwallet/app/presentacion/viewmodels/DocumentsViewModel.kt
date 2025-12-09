@@ -18,7 +18,8 @@ data class DocumentsUiState(
     val error: String? = null,
     val selectedCategory: String = "Todos",
     val searchQuery: String = "",
-    val selectedDocuments: Set<String> = emptySet()
+    val selectedDocuments: Set<String> = emptySet(),
+    val showShareDialog: Boolean = false // Nuevo estado para el diálogo
 )
 
 class DocumentsViewModel(application: Application) : AndroidViewModel(application) {
@@ -60,16 +61,13 @@ class DocumentsViewModel(application: Application) : AndroidViewModel(applicatio
             emit(Pair("Usuario no autenticado", emptyList()))
             return@flow
         }
-
         try {
             _uiState.update { it.copy(isLoading = true, error = null) }
-
             val documentsFlowSource = when (category) {
                 "Todos" -> repository.getUserDocuments(userId)
                 "Favoritos" -> repository.getFavoriteDocuments(userId)
                 else -> repository.getDocumentsByCategory(userId, category)
             }
-
             documentsFlowSource.collect { documents ->
                 val filteredList = if (query.isBlank()) {
                     documents
@@ -85,6 +83,86 @@ class DocumentsViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // --- LÓGICA DE COMPARTIR --- //
+
+    fun onShareRequest() {
+        _uiState.update { it.copy(showShareDialog = true) }
+    }
+
+    fun onShareDialogDismiss() {
+        _uiState.update { it.copy(showShareDialog = false) }
+    }
+
+    fun shareSelectedDocumentsWithEmail(email: String) {
+        _uiState.update { it.copy(showShareDialog = false, isLoading = true) }
+        viewModelScope.launch {
+            val selectedIds = _uiState.value.selectedDocuments
+            if (selectedIds.isEmpty()) {
+                _uiState.update { it.copy(isLoading = false) }
+                return@launch
+            }
+
+            var firstError: String? = null
+            selectedIds.forEach { docId ->
+                val result = repository.shareDocumentWithUser(docId, email)
+                if (result.isFailure) {
+                    firstError = result.exceptionOrNull()?.message
+                }
+            }
+
+            _uiState.update { it.copy(isLoading = false, error = firstError) }
+            if (firstError == null) {
+                clearSelection()
+            }
+        }
+    }
+
+    /**
+     * Inicia el flujo de compartir un link público para los documentos seleccionados
+     * a través del share-sheet nativo de Android.
+     */
+    fun shareSelectedDocumentsAsPublicLink() {
+        viewModelScope.launch {
+            try {
+                val selectedIds = _uiState.value.selectedDocuments
+                if (selectedIds.isEmpty()) return@launch
+
+                // Se asegura de que los documentos tengan una URL de Cloudinary
+                val documentsToShare = selectedIds
+                    .mapNotNull { docId -> _uiState.value.documents.find { it.id == docId } }
+                    .filter { it.cloudinaryUrl != null }
+
+                if (documentsToShare.isNotEmpty()) {
+                    val shareableUrls = documentsToShare.map { it.cloudinaryUrl!! }
+
+                    val shareText = if (shareableUrls.size == 1) {
+                        "Link para el documento '${documentsToShare.first().name}':\n${shareableUrls.first()}"
+                    } else {
+                        "Links para los ${shareableUrls.size} documentos seleccionados:\n${shareableUrls.joinToString("\n")}"
+                    }
+
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    val chooser = Intent.createChooser(intent, "Compartir enlace del documento").apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    getApplication<Application>().startActivity(chooser)
+                    
+                    // Limpia la selección después de compartir exitosamente
+                    clearSelection()
+                } else {
+                     _uiState.update { it.copy(error = "Los documentos seleccionados no están sincronizados y no se pueden compartir.") }
+                }
+
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "No se pudo generar el enlace para compartir: ${e.message}") }
+            }
+        }
+    }
+
+    // --- RESTO DE FUNCIONES --- //
     fun selectCategory(category: String) {
         _uiState.update {
             it.copy(
@@ -147,41 +225,6 @@ class DocumentsViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.update { it.copy(error = "Error al marcar como favorito: ${e.message}") }
             }
         }
-    }
-
-    fun shareSelectedDocuments() {
-        viewModelScope.launch {
-            try {
-                val selectedIds = _uiState.value.selectedDocuments
-                if (selectedIds.isEmpty()) return@launch
-
-                val shareableUrls = selectedIds.mapNotNull { getShareUrl(it) }
-
-                if (shareableUrls.isNotEmpty()) {
-                    val shareText = if (shareableUrls.size == 1) {
-                        "Link para el documento: ${shareableUrls.first()}"
-                    } else {
-                        "Links para los documentos:\n${shareableUrls.joinToString("\n")}"
-                    }
-
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, shareText)
-                    }
-                    val chooser = Intent.createChooser(intent, "Compartir Documentos").apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    getApplication<Application>().startActivity(chooser)
-                }
-                clearSelection()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = "No se pudo compartir: ${e.message}") }
-            }
-        }
-    }
-
-    private suspend fun getShareUrl(documentId: String): String? {
-        return repository.getDocumentById(documentId)?.cloudinaryUrl
     }
 
     fun toggleFavorite(documentId: String, isFavorite: Boolean) {
