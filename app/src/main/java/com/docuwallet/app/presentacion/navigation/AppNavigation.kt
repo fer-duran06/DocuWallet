@@ -27,6 +27,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.docuwallet.app.data.local.database.AppDatabase
 import com.docuwallet.app.data.local.entity.DocumentEntity
 import com.docuwallet.app.data.repository.DocumentRepository
 import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
@@ -182,7 +183,6 @@ fun AppNavigation(
             )
         }
 
-        // Document Detail Screen - CON MANEJO DE ERRORES COMPLETO
         composable(
             route = Routes.DOCUMENT_DETAIL,
             arguments = listOf(navArgument("documentId") { type = NavType.StringType })
@@ -198,7 +198,11 @@ fun AppNavigation(
             }
 
             val context = LocalContext.current
-            val repository = remember { DocumentRepository(context) }
+            // ✨ CORREGIDO: Se inyectan las dependencias correctamente.
+            val repository = remember {
+                val db = AppDatabase.getDatabase(context)
+                DocumentRepository(db.documentDao(), context)
+            }
             val scope = rememberCoroutineScope()
 
             var document by remember { mutableStateOf<DocumentEntity?>(null) }

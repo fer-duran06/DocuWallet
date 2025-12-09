@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.docuwallet.app.data.local.database.AppDatabase
 import com.docuwallet.app.data.repository.DocumentRepository
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
@@ -18,7 +19,10 @@ import kotlinx.coroutines.launch
 @Composable
 fun StatsScreen() {
     val context = LocalContext.current
-    val repository = remember { DocumentRepository(context) }
+    val repository = remember {
+        val db = AppDatabase.getDatabase(context)
+        DocumentRepository(db.documentDao(), context)
+    }
     val scope = rememberCoroutineScope()
 
     var totalDocuments by remember { mutableStateOf(0) }
@@ -36,13 +40,11 @@ fun StatsScreen() {
             try {
                 val userId = FirebaseAuth.getInstance().currentUser?.uid
                 if (userId != null) {
-                    // Estadísticas generales
-                    val stats = repository.getStatistics(userId)
-                    totalDocuments = stats.totalDocuments
-                    totalSpaceMB = stats.totalStorageBytes / (1024.0 * 1024.0)
-
                     // Obtener todos los documentos para análisis detallado
                     repository.getUserDocuments(userId).collect { documents ->
+                        totalDocuments = documents.size
+                        totalSpaceMB = documents.sumOf { it.fileSize } / (1024.0 * 1024.0)
+
                         // Documentos próximos a vencer (30 días)
                         val currentTime = System.currentTimeMillis()
                         val thirtyDaysInMillis = 30L * 24 * 60 * 60 * 1000
@@ -93,7 +95,6 @@ fun StatsScreen() {
                     .verticalScroll(rememberScrollState())
                     .padding(24.dp)
             ) {
-                // Título
                 Text(
                     text = "📊",
                     style = MaterialTheme.typography.displayLarge
@@ -117,7 +118,6 @@ fun StatsScreen() {
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // Estadísticas Generales
                 Card(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -143,7 +143,6 @@ fun StatsScreen() {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Sincronización
                 Card(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -176,7 +175,6 @@ fun StatsScreen() {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Documentos por Categoría
                 if (documentsByCategory.isNotEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth()
@@ -216,7 +214,6 @@ fun StatsScreen() {
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // Información adicional
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(

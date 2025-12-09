@@ -13,12 +13,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.docuwallet.app.data.local.entity.DocumentEntity
 import com.docuwallet.app.presentacion.viewmodels.FileManagerViewModel
+import com.docuwallet.app.presentacion.viewmodels.FileManagerViewModelFactory
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -59,19 +61,20 @@ fun DocumentEntity.toDocumentItem(): DocumentItem {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileManagerScreen(
-    viewModel: FileManagerViewModel = viewModel(),
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val viewModel: FileManagerViewModel = viewModel(factory = FileManagerViewModelFactory(context))
+
     val documentsFromDb by viewModel.documents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedDocuments by viewModel.selectedDocuments.collectAsState()
+    var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
 
-    // Convertimos la lista de la BD a la lista de UI
     val documents = documentsFromDb.map { it.toDocumentItem() }
-
     val selectedCount = selectedDocuments.size
     val hasSelection = selectedCount > 0
-
+    val allSelected = documents.isNotEmpty() && selectedCount == documents.size
 
     Scaffold(
         topBar = {
@@ -84,11 +87,33 @@ fun FileManagerScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
+                    if (hasSelection) {
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Limpiar selección")
+                        }
+                    } else {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
+                        }
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            if (allSelected) {
+                                viewModel.clearSelection()
+                            } else {
+                                viewModel.selectAllDocuments()
+                            }
+                        },
+                        enabled = documents.isNotEmpty() // Correcto: Se deshabilita si no hay documentos, pero sigue visible.
+                    ) {
+                        Icon(
+                            imageVector = if (allSelected) Icons.Default.CheckBox else Icons.Default.SelectAll,
+                            contentDescription = if (allSelected) "Deseleccionar Todo" else "Seleccionar Todo"
+                        )
+                    }
+
                     if (hasSelection) {
                         IconButton(onClick = { viewModel.toggleFavoriteForSelected() }) {
                             Icon(Icons.Default.Star, "Favorito", tint = Color(0xFFFF9800))
@@ -96,7 +121,7 @@ fun FileManagerScreen(
                         IconButton(onClick = { viewModel.shareSelectedDocuments() }) {
                             Icon(Icons.Default.Share, "Compartir", tint = Color(0xFF4CAF50))
                         }
-                        IconButton(onClick = { viewModel.deleteSelectedDocuments() }) {
+                        IconButton(onClick = { showDeleteConfirmationDialog = true }) {
                             Icon(Icons.Default.Delete, "Eliminar", tint = Color(0xFFF44336))
                         }
                     }
@@ -124,7 +149,7 @@ fun FileManagerScreen(
                     .padding(16.dp),
                 shape = RoundedCornerShape(25.dp),
                 leadingIcon = {
-                    Icon(Icons.Default.Search, "Buscar")
+                    Icon(Icons.Filled.Search, "Buscar")
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -165,6 +190,32 @@ fun FileManagerScreen(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirmationDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmationDialog = false },
+            title = { Text("Confirmar Eliminación") },
+            text = { Text("¿Estás seguro de que quieres eliminar $selectedCount documento(s)? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteSelectedDocuments()
+                        showDeleteConfirmationDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
+                ) {
+                    Text("Eliminar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmationDialog = false }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
 

@@ -3,6 +3,7 @@ package com.docuwallet.app.presentacion.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.docuwallet.app.data.local.database.AppDatabase
 import com.docuwallet.app.data.repository.DocumentRepository
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,13 +32,17 @@ data class ProfileUiState(
 
 class ProfileViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = DocumentRepository(application.applicationContext)
+    // ✨ CORREGIDO: Se obtiene el DAO y se pasa al repositorio.
+    private val repository: DocumentRepository
     private val auth = FirebaseAuth.getInstance()
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
+        // La inicialización ahora ocurre en el bloque init.
+        val documentDao = AppDatabase.getDatabase(application).documentDao()
+        repository = DocumentRepository(documentDao, application.applicationContext)
         loadProfileData()
     }
 
@@ -61,15 +66,13 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
                 val memberSince = formatCreationDate(currentUser.metadata?.creationTimestamp ?: 0)
                 val photoUrl = currentUser.photoUrl?.toString()
 
-                // Estadísticas desde Room Database
-                val stats = repository.getStatistics(currentUser.uid)
-                val totalDocuments = stats.totalDocuments
-                val totalStorageMB = stats.totalStorageBytes / (1024.0 * 1024.0)
-
-                // Calcular total de accesos
-                var totalAccesses = 0
+                // Calcular total de accesos y estadísticas
+                // Usamos un `collect` para obtener el último valor del Flow
                 repository.getUserDocuments(currentUser.uid).collect { documents ->
-                    totalAccesses = documents.sumOf { it.accessCount }
+                    val totalDocuments = documents.size
+                    val totalStorageBytes = documents.sumOf { it.fileSize }
+                    val totalStorageMB = totalStorageBytes / (1024.0 * 1024.0)
+                    val totalAccesses = documents.sumOf { it.accessCount }
 
                     _uiState.value = ProfileUiState(
                         isLoading = false,

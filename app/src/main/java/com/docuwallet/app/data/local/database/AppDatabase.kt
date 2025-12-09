@@ -28,6 +28,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "docuwallet_database"
                 )
                     .fallbackToDestructiveMigration()
+                    .allowMainThreadQueries()
                     .build()
                 INSTANCE = instance
                 instance

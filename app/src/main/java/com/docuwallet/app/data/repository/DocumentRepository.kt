@@ -4,13 +4,10 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.docuwallet.app.data.local.dao.DocumentDao
-import com.docuwallet.app.data.local.database.AppDatabase
 import com.docuwallet.app.data.local.entity.DocumentEntity
 import com.docuwallet.app.data.remote.cloudinary.CloudinaryService
 import com.docuwallet.app.data.remote.firebase.FirebaseDocumentService
-import com.docuwallet.app.domain.model.DocumentModel
 import com.docuwallet.app.utils.PdfUtils
-import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,9 +16,12 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
 
-class DocumentRepository(private val context: Context) {
+// ✨ CORREGIDO: El repositorio ahora recibe el DAO y el Context, en lugar de crearlos.
+class DocumentRepository(
+    private val documentDao: DocumentDao,
+    private val context: Context
+) {
 
-    private val documentDao: DocumentDao = AppDatabase.getDatabase(context).documentDao()
     private val auth = FirebaseAuth.getInstance()
     private val cloudinaryService = CloudinaryService(context)
     private val documentService = FirebaseDocumentService()
@@ -41,12 +41,10 @@ class DocumentRepository(private val context: Context) {
         try { documentDao.incrementAccessCount(documentId) } catch (e: Exception) { Log.e(TAG, "Error contador", e) }
     }
 
-    // Compatibilidad
     suspend fun saveDocument(imageUris: List<Uri>, name: String, category: String, notes: String, pageCount: Int): Result<String> {
         return saveDocumentWithExpiry(imageUris, name, category, notes, pageCount, null)
     }
 
-    // ✨ LA FUNCIÓN PRINCIPAL DE GUARDADO (CORREGIDA)
     suspend fun saveDocumentWithExpiry(
         imageUris: List<Uri>,
         name: String,
@@ -57,12 +55,9 @@ class DocumentRepository(private val context: Context) {
     ): Result<String> {
         return try {
             val userId = auth.currentUser?.uid ?: return Result.failure(Exception("Usuario no autenticado"))
-
-            // 1. Generar PDF
             val pdfFile = PdfUtils.generatePdfFromImages(context, imageUris, name)
             if (!pdfFile.exists() || pdfFile.length() == 0L) return Result.failure(Exception("Error al generar PDF"))
 
-            // 2. Crear Entidad LOCAL (Room usa Long)
             val documentId = UUID.randomUUID().toString()
             val currentTime = System.currentTimeMillis()
 
@@ -86,17 +81,13 @@ class DocumentRepository(private val context: Context) {
                 accessCount = 0
             )
 
-            // 3. Guardar en BD Local
             documentDao.insertDocument(documentEntity)
             Log.d(TAG, "✅ Documento guardado en Room: $documentId - ${documentEntity.name}")
 
-            // 4. ✨ NUEVO: Subir a Cloudinary de forma ASÍNCRONA (no bloqueante)
-            // Esto se ejecuta en segundo plano y NO bloquea el guardado
             CoroutineScope(Dispatchers.IO).launch {
                 tryUploadToCloudinary(documentEntity, pdfFile)
             }
 
-            // 5. Retornar éxito inmediatamente
             Result.success(documentId)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error guardando", e)
@@ -104,43 +95,26 @@ class DocumentRepository(private val context: Context) {
         }
     }
 
-    /**
-     * ✨ CORREGIDO: Subir documento a Cloudinary (con timeout y manejo de errores)
-     */
     private suspend fun tryUploadToCloudinary(document: DocumentEntity, pdfFile: File) {
         try {
             Log.d(TAG, "📤 Intentando subir a Cloudinary: ${document.id}")
-
-            // Subir PDF a Cloudinary (esto puede fallar si no hay internet)
             val cloudinaryUrl = cloudinaryService.uploadPdf(pdfFile, document.id)
-
-            // Actualizar URL en Room
             documentDao.updateCloudinaryUrl(
                 documentId = document.id,
                 cloudinaryUrl = cloudinaryUrl,
                 isSynced = true
             )
-
             Log.d(TAG, "✅ Documento sincronizado con Cloudinary: ${document.id}")
-            Log.d(TAG, "🔗 URL: $cloudinaryUrl")
-
         } catch (e: Exception) {
             Log.w(TAG, "⚠️ Error al subir a Cloudinary (quedará pendiente): ${e.message}")
-            // El documento queda guardado localmente, se puede reintentar después
-            // NO marcamos como error, simplemente queda pendiente de sincronización
         }
     }
 
-    /**
-     * Sincronizar documentos pendientes con Cloudinary
-     */
     suspend fun syncPendingDocuments(): Result<Int> {
         return try {
             val unsyncedDocs = documentDao.getUnsyncedDocuments()
             var syncedCount = 0
-
             Log.d(TAG, "🔄 Sincronizando ${unsyncedDocs.size} documentos pendientes...")
-
             unsyncedDocs.forEach { doc ->
                 val pdfFile = File(doc.pdfLocalPath)
                 if (pdfFile.exists()) {
@@ -152,7 +126,6 @@ class DocumentRepository(private val context: Context) {
                     }
                 }
             }
-
             Log.d(TAG, "✅ Sincronizados $syncedCount de ${unsyncedDocs.size} documentos")
             Result.success(syncedCount)
         } catch (e: Exception) {
@@ -171,14 +144,8 @@ class DocumentRepository(private val context: Context) {
     suspend fun deleteDocument(id: String): Result<Unit> {
         return try {
             val doc = documentDao.getDocumentById(id) ?: return Result.failure(Exception("No existe"))
-
-            // Eliminar archivo local
             File(doc.pdfLocalPath).delete()
-
-            // Eliminar de Room
             documentDao.deleteDocumentById(id)
-
-            // ✨ Eliminar de Cloudinary si existe (asíncrono)
             if (doc.cloudinaryUrl != null) {
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -192,52 +159,7 @@ class DocumentRepository(private val context: Context) {
                     }
                 }
             }
-
             Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
     }
-
-    suspend fun getStatistics(userId: String): DocumentStatistics {
-        val count = documentDao.getDocumentCount(userId)
-        val size = documentDao.getTotalStorageUsed(userId) ?: 0L
-        return DocumentStatistics(count, size)
-    }
-
-    /**
-     * Obtener estadísticas de sincronización con Cloudinary
-     */
-    suspend fun getSyncStatistics(userId: String): SyncStatistics {
-        return try {
-            val allDocs = documentDao.getUserDocuments(userId)
-            var totalDocs = 0
-            var syncedDocs = 0
-            var localOnlyDocs = 0
-
-            allDocs.collect { documents ->
-                totalDocs = documents.size
-                syncedDocs = documents.count { it.cloudinaryUrl != null && it.isSynced }
-                localOnlyDocs = documents.count { it.cloudinaryUrl == null }
-            }
-
-            SyncStatistics(
-                totalDocuments = totalDocs,
-                syncedToCloud = syncedDocs,
-                localOnly = localOnlyDocs
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error obteniendo estadísticas de sync", e)
-            SyncStatistics(0, 0, 0)
-        }
-    }
 }
-
-data class DocumentStatistics(
-    val totalDocuments: Int,
-    val totalStorageBytes: Long
-)
-
-data class SyncStatistics(
-    val totalDocuments: Int,
-    val syncedToCloud: Int,
-    val localOnly: Int
-)

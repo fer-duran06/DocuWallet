@@ -3,6 +3,7 @@ package com.docuwallet.app.presentacion.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.docuwallet.app.DocuWalletApplication
 import com.docuwallet.app.data.local.entity.DocumentEntity
 import com.docuwallet.app.data.repository.DocumentRepository
 import com.google.firebase.auth.FirebaseAuth
@@ -20,7 +21,7 @@ data class DocumentsUiState(
 
 class DocumentsViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = DocumentRepository(application.applicationContext)
+    private val repository: DocumentRepository = (application as DocuWalletApplication).repository
     private val auth = FirebaseAuth.getInstance()
 
     private val _uiState = MutableStateFlow(DocumentsUiState())

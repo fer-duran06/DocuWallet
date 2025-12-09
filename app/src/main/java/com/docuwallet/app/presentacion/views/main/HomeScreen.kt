@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.docuwallet.app.data.local.database.AppDatabase
 import com.docuwallet.app.data.local.entity.DocumentEntity
 import com.docuwallet.app.data.repository.DocumentRepository
 import com.docuwallet.app.presentacion.viewmodel.AuthViewModel
@@ -30,7 +30,11 @@ fun HomeScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
-    val repository = remember { DocumentRepository(context) }
+    // ✨ CORREGIDO: Se obtiene el DAO y se inyecta en el Repositorio.
+    val repository = remember {
+        val db = AppDatabase.getDatabase(context)
+        DocumentRepository(db.documentDao(), context)
+    }
     val scope = rememberCoroutineScope()
 
     var totalDocuments by remember { mutableStateOf(0) }
@@ -39,7 +43,6 @@ fun HomeScreen(
     var expiringDocuments by remember { mutableStateOf<List<DocumentEntity>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Cargar estadísticas
     LaunchedEffect(Unit) {
         scope.launch {
             try {
@@ -47,12 +50,11 @@ fun HomeScreen(
                 val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@launch
 
                 // Estadísticas generales
-                val stats = repository.getStatistics(userId)
-                totalDocuments = stats.totalDocuments
-                totalSpaceMB = stats.totalStorageBytes / (1024.0 * 1024.0)
-
-                // Obtener documentos para calcular alertas
+                // Nota: Esta parte puede ser optimizada en el futuro
                 repository.getUserDocuments(userId).collect { documents ->
+                    totalDocuments = documents.size
+                    totalSpaceMB = documents.sumOf { it.fileSize } / (1024.0 * 1024.0)
+
                     // Calcular documentos próximos a vencer (30 días)
                     val currentTime = System.currentTimeMillis()
                     val thirtyDaysInMillis = 30L * 24 * 60 * 60 * 1000
@@ -61,7 +63,7 @@ fun HomeScreen(
                         doc.expiryDate != null &&
                                 doc.expiryDate!! > currentTime && // No vencidos
                                 doc.expiryDate!! - currentTime <= thirtyDaysInMillis // Vencen en 30 días
-                    }.sortedBy { it.expiryDate } // ← CORREGIDO: sortBy → sortedBy
+                    }.sortedBy { it.expiryDate }
 
                     documentsExpiringSoon = expiringDocuments.size
                     isLoading = false
