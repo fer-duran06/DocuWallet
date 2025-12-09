@@ -51,213 +51,137 @@ fun AppNavigation(
     navController: NavHostController = rememberNavController(),
     authViewModel: AuthViewModel = viewModel()
 ) {
-    // Estado para las imágenes capturadas
     var capturedImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
-
-    // ViewModel compartido para todo el flujo de documentos
     val documentUploadViewModel: DocumentUploadViewModel = viewModel()
 
-    val startDestination = if (authViewModel.isUserLoggedIn()) {
-        Routes.HOME
-    } else {
-        Routes.SPLASH
-    }
+    val startDestination = if (authViewModel.isUserLoggedIn()) Routes.HOME else Routes.SPLASH
 
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
-        // Splash Screen
         composable(Routes.SPLASH) {
             SplashScreen(navController = navController)
         }
-
-        // Login Screen
         composable(Routes.LOGIN) {
             LoginScreen(
-                onNavigateToRegister = {
-                    navController.navigate(Routes.REGISTER)
-                },
+                onNavigateToRegister = { navController.navigate(Routes.REGISTER) },
                 onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
-                    }
+                    navController.navigate(Routes.HOME) { popUpTo(Routes.LOGIN) { inclusive = true } }
                 }
             )
         }
-
-        // Register Screen
         composable(Routes.REGISTER) {
             RegisterScreen(
-                onNavigateToLogin = {
-                    navController.popBackStack()
-                },
+                onNavigateToLogin = { navController.popBackStack() },
                 onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.REGISTER) { inclusive = true }
-                    }
+                    navController.navigate(Routes.HOME) { popUpTo(Routes.REGISTER) { inclusive = true } }
                 }
             )
         }
-
-        // Main Screen (con Bottom Navigation)
         composable(Routes.HOME) {
             MainScreen(
                 authViewModel = authViewModel,
-                onNavigateToNewDocument = {
-                    navController.navigate(Routes.NEW_DOCUMENT)
-                },
-                onNavigateToFileManager = {
-                    navController.navigate(Routes.FILE_MANAGER)
-                },
+                onNavigateToNewDocument = { navController.navigate(Routes.NEW_DOCUMENT) },
+                onNavigateToFileManager = { navController.navigate(Routes.FILE_MANAGER) },
                 onNavigateToDocumentDetail = { documentId ->
                     navController.navigate(Routes.documentDetail(documentId))
                 },
-                onNavigateToEditProfile = { 
-                    navController.navigate(Routes.EDIT_PROFILE)
-                },
-                onNavigateToChangePassword = {
-                    navController.navigate(Routes.CHANGE_PASSWORD)
-                },
+                onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
+                onNavigateToChangePassword = { navController.navigate(Routes.CHANGE_PASSWORD) },
                 onLogout = {
                     authViewModel.logout()
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
+                    navController.navigate(Routes.LOGIN) { popUpTo(Routes.HOME) { inclusive = true } }
                 }
             )
         }
-
         composable(Routes.EDIT_PROFILE) {
             val profileViewModel: ProfileViewModel = viewModel()
             val uiState by profileViewModel.uiState.collectAsState()
-
             EditProfileScreen(
                 currentName = uiState.userName,
                 currentEmail = uiState.userEmail,
                 onNavigateBack = { navController.popBackStack() },
-                onSave = { newName ->
-                    profileViewModel.updateUserName(newName)
-                },
+                onSave = { newName -> profileViewModel.updateUserName(newName) },
                 isLoading = uiState.isLoading,
                 error = uiState.error
             )
-
-            // Navegar hacia atrás si el guardado fue exitoso
             LaunchedEffect(uiState.isSaveSuccess) {
-                if (uiState.isSaveSuccess) {
-                    navController.popBackStack()
-                }
+                if (uiState.isSaveSuccess) navController.popBackStack()
             }
         }
-
         composable(Routes.CHANGE_PASSWORD) {
             val profileViewModel: ProfileViewModel = viewModel()
             val uiState by profileViewModel.uiState.collectAsState()
-
             ChangePasswordScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onSave = { oldPass, newPass ->
-                    profileViewModel.changePassword(oldPass, newPass)
-                },
+                onSave = { oldPass, newPass -> profileViewModel.changePassword(oldPass, newPass) },
                 isLoading = uiState.isLoading,
                 error = uiState.error
             )
-
-            // Navegar hacia atrás si el guardado fue exitoso
             LaunchedEffect(uiState.isSaveSuccess) {
-                if (uiState.isSaveSuccess) {
-                    navController.popBackStack()
-                }
+                if (uiState.isSaveSuccess) navController.popBackStack()
             }
         }
-
-        // File Manager Screen
         composable(Routes.FILE_MANAGER) {
-            FileManagerScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
+            FileManagerScreen(onNavigateBack = { navController.popBackStack() })
         }
-
-        // New Document Screen - COMPARTIR VIEWMODEL
         composable(Routes.NEW_DOCUMENT) {
             NewDocumentScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
+                onNavigateBack = { navController.popBackStack() },
                 onNavigateToCamera = {
                     capturedImages = emptyList()
                     navController.navigate(Routes.CAMERA_SCAN)
                 },
+                onImagesSelected = { uris ->
+                    capturedImages = uris
+                    navController.navigate(Routes.PAGE_PREVIEW)
+                },
                 onNavigateToDocuments = {
-                    // Limpiar ViewModel después de guardar
                     capturedImages = emptyList()
                     documentUploadViewModel.resetPdfState()
                     documentUploadViewModel.resetSaveState()
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = false }
-                    }
+                    navController.navigate(Routes.HOME) { popUpTo(Routes.HOME) { inclusive = false } }
                 },
                 capturedImages = capturedImages,
                 viewModel = documentUploadViewModel
             )
         }
-
-        // Camera Scan Screen
         composable(Routes.CAMERA_SCAN) {
             CameraScanScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
+                onNavigateBack = { navController.popBackStack() },
                 onImagesCapture = { images ->
                     capturedImages = images
                     navController.navigate(Routes.PAGE_PREVIEW)
                 }
             )
         }
-
-        // Page Preview Screen - COMPARTIR VIEWMODEL
         composable(Routes.PAGE_PREVIEW) {
             PagePreviewScreen(
                 capturedImages = capturedImages,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onGeneratePdf = {
-                    // Volver a NewDocumentScreen después de generar PDF
-                    navController.popBackStack()
-                },
+                onNavigateBack = { navController.popBackStack() },
+                onGeneratePdf = { navController.popBackStack() },
                 onDeletePage = { index ->
                     capturedImages = capturedImages.filterIndexed { i, _ -> i != index }
                 },
                 viewModel = documentUploadViewModel
             )
         }
-
         composable(
             route = Routes.DOCUMENT_DETAIL,
             arguments = listOf(navArgument("documentId") { type = NavType.StringType })
         ) { backStackEntry ->
             val documentId = backStackEntry.arguments?.getString("documentId")
-
             if (documentId == null) {
-                // Si no hay ID, volver atrás
-                LaunchedEffect(Unit) {
-                    navController.popBackStack()
-                }
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
-
             val context = LocalContext.current
-            // ✨ CORREGIDO: Se inyectan las dependencias correctamente.
             val repository = remember {
                 val db = AppDatabase.getDatabase(context)
                 DocumentRepository(db.documentDao(), context)
             }
             val scope = rememberCoroutineScope()
-
             var document by remember { mutableStateOf<DocumentEntity?>(null) }
             var isLoading by remember { mutableStateOf(true) }
             var error by remember { mutableStateOf<String?>(null) }
@@ -267,88 +191,35 @@ fun AppNavigation(
                     try {
                         isLoading = true
                         error = null
-                        android.util.Log.d("AppNavigation", "Cargando documento: $documentId")
-
                         document = repository.getDocumentById(documentId)
-
                         if (document == null) {
                             error = "Documento no encontrado"
-                            android.util.Log.w("AppNavigation", "Documento no encontrado: $documentId")
-                        } else {
-                            android.util.Log.d("AppNavigation", "Documento cargado: ${document!!.name}")
                         }
-
                         isLoading = false
                     } catch (e: Exception) {
                         isLoading = false
                         error = e.message ?: "Error al cargar documento"
-                        android.util.Log.e("AppNavigation", "Error al cargar documento: $documentId", e)
                     }
                 }
             }
-
             when {
                 isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Cargando documento...")
-                        }
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
                     }
                 }
-
                 error != null -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Error,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = error ?: "Error desconocido",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "ID: $documentId",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { navController.popBackStack() }) {
-                                Text("Volver")
-                            }
-                        }
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(error ?: "Error desconocido", color = MaterialTheme.colorScheme.error)
                     }
                 }
-
                 document != null -> {
                     DocumentDetailScreen(
                         document = document!!,
                         onNavigateBack = { navController.popBackStack() },
                         onDocumentOpened = {
-                            // Incrementar contador de accesos
                             scope.launch {
                                 repository.incrementAccessCount(documentId)
-                                android.util.Log.d("AppNavigation", "Contador incrementado para: $documentId")
-
-                                // Recargar documento para mostrar nuevo contador
                                 document = repository.getDocumentById(documentId)
                             }
                         }

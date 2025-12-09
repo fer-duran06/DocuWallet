@@ -19,6 +19,20 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
     // Se obtiene el repositorio singleton desde la clase Application.
     private val repository: DocumentRepository = (application as DocuWalletApplication).repository
 
+    data class PdfGenerationState(
+        val isLoading: Boolean = false,
+        val isSuccess: Boolean = false,
+        val pdfFile: File? = null,
+        val error: String? = null
+    )
+
+    data class DocumentSaveState(
+        val isLoading: Boolean = false,
+        val isSuccess: Boolean = false,
+        val documentId: String? = null,
+        val error: String? = null
+    )
+
     private val _pdfState = MutableStateFlow(PdfGenerationState())
     val pdfState: StateFlow<PdfGenerationState> = _pdfState.asStateFlow()
 
@@ -126,5 +140,3 @@ class DocumentUploadViewModel(application: Application) : AndroidViewModel(appli
         _saveState.value = DocumentSaveState()
     }
 }
-
-
